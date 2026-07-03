@@ -1,0 +1,1 @@
+document.addEventListener('DOMContentLoaded',()=>{document.querySelectorAll('.datatable').forEach(t=>new DataTable(t,{pageLength:25,order:[]}));const f=document.getElementById('refreshForm');if(f){f.addEventListener('submit',()=>{document.getElementById('refreshBtn').disabled=true;document.getElementById('loading').classList.remove('d-none')})}});

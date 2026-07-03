@@ -1,0 +1,5 @@
+{% extends 'base.html' %}
+{% block content %}
+<h3>Risultati ricerca: {{ query }}</h3>
+<div class="card"><div class="card-body table-responsive"><table class="table datatable"><thead><tr><th>Tipo</th><th>Evento</th><th>Book</th><th>Mercato</th><th>Back</th><th>Lay</th><th>ROI</th><th>QL</th></tr></thead><tbody>{% for r in rows %}<tr><td>{{ r['type'] }}</td><td>{{ r['event_name'] }}</td><td>{{ r['bookmaker'] }}</td><td>{{ r['market'] }}</td><td>{{ r['back_odd'] }}</td><td>{{ r['lay_odd'] }}</td><td>{{ r['roi'] }}</td><td>{{ r['qualifying_loss'] }}</td></tr>{% endfor %}</tbody></table></div></div>
+{% endblock %}

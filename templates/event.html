@@ -1,0 +1,6 @@
+{% extends 'base.html' %}
+{% block content %}
+<h3>{{ event['home_team'] }} - {{ event['away_team'] }}</h3>
+<p class="text-muted">{{ event['league'] }} · {{ event['start_time'] }}</p>
+<div class="row"><div class="col-lg-6"><div class="card"><div class="card-header">Quote bookmaker</div><div class="card-body table-responsive"><table class="table datatable"><thead><tr><th>Book</th><th>Mercato</th><th>Sel.</th><th>Quota</th></tr></thead><tbody>{% for o in odds %}<tr><td>{{ o['bookmaker'] }}</td><td>{{ o['market'] }}</td><td>{{ o['selection'] }}</td><td>{{ o['odd'] }}</td></tr>{% endfor %}</tbody></table></div></div></div><div class="col-lg-6"><div class="card"><div class="card-header">Betfair Lay</div><div class="card-body table-responsive"><table class="table datatable"><thead><tr><th>Mercato</th><th>Sel.</th><th>Lay</th><th>Size</th></tr></thead><tbody>{% for b in betfair %}<tr><td>{{ b['market'] }}</td><td>{{ b['selection'] }}</td><td>{{ b['lay_price'] }}</td><td>{{ b['lay_size'] }}</td></tr>{% endfor %}</tbody></table></div></div></div></div>
+{% endblock %}

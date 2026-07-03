@@ -1,0 +1,37 @@
+services:
+  - type: web
+    name: betscanner
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn app:app
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: DB_PATH
+        value: instance/database.db
+      - key: LOOKAHEAD_HOURS
+        value: "72"
+      - key: BETFAIR_COMMISSION
+        value: "0.02"
+      - key: DEFAULT_STAKE
+        value: "100"
+      - key: MIN_SUREBET_ROI
+        value: "0.8"
+      - key: MAX_QUALIFYING_LOSS
+        value: "5"
+      - key: SECRET_KEY
+        sync: false
+      - key: ODDSPAPI_KEY
+        sync: false
+      - key: BETFAIR_APP_KEY
+        sync: false
+      - key: BETFAIR_USERNAME
+        sync: false
+      - key: BETFAIR_PASSWORD
+        sync: false
+      - key: BETFAIR_CERT
+        sync: false
+      - key: BETFAIR_KEY
+        sync: false
