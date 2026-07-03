@@ -10,6 +10,7 @@
   <button class="btn btn-primary btn-lg" id="refreshBtn">Refresh Quotes</button>
   <span class="ms-3 text-muted d-none" id="loading">Aggiornamento quote in corso...</span>
 </form>
+<div class="alert d-none" role="alert" id="refreshAlert"></div>
 {% if missing_credentials %}
 <div class="alert alert-warning" role="alert">
   Configura queste variabili ambiente per usare il refresh: {{ missing_credentials|join(', ') }}.
