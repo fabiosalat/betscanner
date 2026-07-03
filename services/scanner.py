@@ -28,6 +28,24 @@ class QuoteScanner:
             parsed_events = self.odds.parse_events()
             api_calls += self.odds.api_calls
             events_count = len(parsed_events)
+            if not parsed_events:
+                duration = time.time() - started
+                stats = {
+                    "timestamp": time.time(),
+                    "events": 0,
+                    "bookmaker_odds": 0,
+                    "betfair_markets": 0,
+                    "betfair_lays": 0,
+                    "matched_lays": 0,
+                    "joined_odds": 0,
+                    "surebets": 0,
+                    "matched": 0,
+                    "api_calls": api_calls,
+                }
+                message = "Refresh completato, OddsPapi non ha restituito eventi per le prossime 72 ore"
+                self.repo.set_cache("last_refresh", stats)
+                self.repo.save_refresh_history(duration, events_count, api_calls, "ok", message)
+                return {"status": "ok", **stats, "duration": duration, "message": message}
 
             odds_event_payloads = []
             bookmaker_odds_count = 0
