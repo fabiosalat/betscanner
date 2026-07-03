@@ -1,3 +1,6 @@
+from datetime import datetime
+import pytest
+import requests
 from services.oddspapi_service import OddsPapiService, normalize_bookmaker
 
 
@@ -25,6 +28,24 @@ def test_fetch_raw_events_uses_v4_fixtures(monkeypatch):
     assert captured["params"]["statusId"] == 0
     assert captured["params"]["hasOdds"] == "true"
     assert captured["params"]["bookmakers"]
+    from_dt = datetime.fromisoformat(captured["params"]["from"].replace("Z", "+00:00"))
+    to_dt = datetime.fromisoformat(captured["params"]["to"].replace("Z", "+00:00"))
+    assert (to_dt - from_dt).total_seconds() < 48 * 60 * 60
+
+
+def test_get_reports_unauthorized_oddspapi_key(monkeypatch):
+    service = OddsPapiService(api_key=" x ")
+
+    class Response:
+        status_code = 401
+
+        def raise_for_status(self):
+            raise requests.HTTPError("401")
+
+    monkeypatch.setattr(service.session, "get", lambda *args, **kwargs: Response())
+
+    with pytest.raises(RuntimeError, match="ODDSPAPI_KEY non valida"):
+        service._get("/v4/fixtures", {})
 
 
 def test_parse_events_fetches_v4_odds_for_fixtures_with_odds(monkeypatch):

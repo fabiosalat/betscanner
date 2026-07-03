@@ -7,6 +7,7 @@ from matching.normalizer import normalize_team_name, normalize_league
 
 ODDSPAPI_BASE_URL = "https://api.oddspapi.io"
 log = logging.getLogger(__name__)
+MAX_FIXTURES_LOOKAHEAD_HOURS = 47
 
 MARKET_ALIASES = {
     "h2h": "MATCH_ODDS", "match odds": "MATCH_ODDS", "1x2": "MATCH_ODDS",
@@ -85,7 +86,7 @@ def normalize_bookmaker(raw_bookmaker: str) -> str:
 
 class OddsPapiService:
     def __init__(self, api_key: str = ODDSPAPI_KEY):
-        self.api_key = api_key
+        self.api_key = (api_key or "").strip()
         self.session = requests.Session()
         self.api_calls = 0
         self._markets = None
@@ -102,9 +103,13 @@ class OddsPapiService:
                 r = self.session.get(url, headers=self._headers(), params=params, timeout=REQUEST_TIMEOUT)
                 if r.status_code == 404:
                     return None
+                if r.status_code == 401:
+                    raise RuntimeError("ODDSPAPI_KEY non valida o non autorizzata da OddsPapi")
                 r.raise_for_status()
                 return r.json()
             except Exception as exc:
+                if str(exc).startswith("ODDSPAPI_KEY"):
+                    raise
                 last_exc = exc
         raise RuntimeError(f"OddsPapi request failed: {last_exc}")
 
@@ -112,7 +117,7 @@ class OddsPapiService:
         if not self.api_key:
             raise RuntimeError("ODDSPAPI_KEY non configurata")
         now = datetime.now(timezone.utc)
-        end = now + timedelta(hours=LOOKAHEAD_HOURS)
+        end = now + timedelta(hours=min(LOOKAHEAD_HOURS, MAX_FIXTURES_LOOKAHEAD_HOURS))
         params = {
             "sportId": ODDSPAPI_SPORT_ID,
             "from": now.isoformat(timespec="seconds").replace("+00:00", "Z"),
