@@ -6,6 +6,9 @@ def env(name, default=""):
     return os.getenv(name) or default
 APP_NAME = "BetScanner"
 SPORT = "soccer"
+ODDSPAPI_SPORT_ID = int(env("ODDSPAPI_SPORT_ID", "10"))
+ODDSPAPI_LANGUAGE = env("ODDSPAPI_LANGUAGE", "en")
+ODDSPAPI_STATUS_ID = int(env("ODDSPAPI_STATUS_ID", "0"))
 BETFAIR_EVENT_TYPE_SOCCER = "1"
 LOOKAHEAD_HOURS = int(env("LOOKAHEAD_HOURS", "72"))
 BETFAIR_COMMISSION = float(env("BETFAIR_COMMISSION", "0.02"))

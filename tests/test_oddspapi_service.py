@@ -8,10 +8,114 @@ def test_parse_events_ignores_unknown_response_shape(monkeypatch):
     assert service.parse_events() == []
 
 
+def test_fetch_raw_events_uses_v4_fixtures(monkeypatch):
+    service = OddsPapiService(api_key="x")
+    captured = {}
+
+    def fake_get(path, params):
+        captured["path"] = path
+        captured["params"] = params
+        return [{"fixtureId": "id1"}]
+
+    monkeypatch.setattr(service, "_get", fake_get)
+
+    assert service.fetch_raw_events() == [{"fixtureId": "id1"}]
+    assert captured["path"] == "/v4/fixtures"
+    assert captured["params"]["sportId"] == 10
+    assert captured["params"]["statusId"] == 0
+    assert captured["params"]["hasOdds"] == "true"
+    assert captured["params"]["bookmakers"]
+
+
+def test_parse_events_fetches_v4_odds_for_fixtures_with_odds(monkeypatch):
+    service = OddsPapiService(api_key="x")
+    monkeypatch.setattr(service, "fetch_raw_events", lambda: [{
+        "fixtureId": "id1",
+        "participant1Name": "Inter Milan",
+        "participant2Name": "AC Milan",
+        "tournamentName": "Serie A",
+        "hasOdds": True,
+    }])
+    monkeypatch.setattr(service, "fetch_fixture_odds", lambda fixture_id: {
+        "bookmakerOdds": {
+            "bet365": {
+                "suspended": False,
+                "markets": {
+                    "101": {
+                        "marketActive": True,
+                        "outcomes": {
+                            "101": {"players": {"0": {"active": True, "price": 2.1}}},
+                        },
+                    },
+                },
+            },
+        },
+    })
+    service._markets = {"101": {"marketId": 101, "marketName": "Full Time Result", "period": "fulltime", "outcomes": [{"outcomeId": 101, "outcomeName": "1"}]}}
+
+    assert service.parse_events()[0]["odds"] == [{"bookmaker": "Bet365 IT", "market": "MATCH_ODDS", "selection": "HOME", "odd": 2.1}]
+
+
+def test_parse_events_supports_v4_fixture_shape(monkeypatch):
+    service = OddsPapiService(api_key="x")
+    monkeypatch.setattr(service, "fetch_raw_events", lambda: [{
+        "fixtureId": "id1000001761301153",
+        "participant1Name": "Liverpool FC",
+        "participant2Name": "Manchester United",
+        "startTime": "2026-04-13T19:00:00.000Z",
+        "tournamentName": "Premier League",
+    }])
+
+    assert service.parse_events() == [{
+        "odds_event_id": "id1000001761301153",
+        "league": "Premier League",
+        "home_team": "Liverpool FC",
+        "away_team": "Manchester United",
+        "start_time": "2026-04-13T19:00:00.000Z",
+        "normalized_home": "liverpool",
+        "normalized_away": "manchester united",
+        "odds": [],
+    }]
+
+
 def test_parse_odds_ignores_unknown_nested_shapes():
     service = OddsPapiService(api_key="x")
 
     assert service.parse_odds({"id": "1", "bookmakers": "bad"}) == []
+
+
+def test_parse_odds_supports_v4_bookmaker_odds():
+    service = OddsPapiService(api_key="x")
+    service._markets = {
+        "104": {
+            "marketId": 104,
+            "marketName": "Both Teams To Score",
+            "period": "fulltime",
+            "outcomes": [{"outcomeId": 104, "outcomeName": "Yes"}, {"outcomeId": 105, "outcomeName": "No"}],
+        }
+    }
+
+    rows = service.parse_odds({
+        "bookmakerOdds": {
+            "sisal": {
+                "suspended": False,
+                "markets": {
+                    "104": {
+                        "marketActive": True,
+                        "outcomes": {
+                            "104": {"players": {"0": {"active": True, "price": 1.8}}},
+                            "105": {"players": {"0": {"active": True, "price": 1.95}}},
+                        },
+                    },
+                },
+            }
+        }
+    })
+
+    assert rows == [
+        {"bookmaker": "Sisal IT", "market": "BTTS", "selection": "YES", "odd": 1.8},
+        {"bookmaker": "Sisal IT", "market": "BTTS", "selection": "NO", "odd": 1.95},
+    ]
 
 
 def test_normalize_bookmaker_aliases():

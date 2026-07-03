@@ -2,10 +2,10 @@ from datetime import datetime, timedelta, timezone
 import logging
 import requests
 from typing import Dict, List, Any
-from config import ODDSPAPI_KEY, BOOKMAKERS, LOOKAHEAD_HOURS, REQUEST_TIMEOUT, RETRY_COUNT
+from config import ODDSPAPI_KEY, BOOKMAKERS, LOOKAHEAD_HOURS, REQUEST_TIMEOUT, RETRY_COUNT, ODDSPAPI_SPORT_ID, ODDSPAPI_LANGUAGE, ODDSPAPI_STATUS_ID
 from matching.normalizer import normalize_team_name, normalize_league
 
-ODDSPAPI_BASE_URL = "https://api.oddspapi.io/v1"
+ODDSPAPI_BASE_URL = "https://api.oddspapi.io"
 log = logging.getLogger(__name__)
 
 MARKET_ALIASES = {
@@ -39,6 +39,16 @@ BOOKMAKER_ALIASES = {
     "bet365 it": "Bet365 IT",
     "eplay24": "EPLAY24 IT",
     "eplay24 it": "EPLAY24 IT",
+}
+
+BOOKMAKER_SLUGS = {
+    "Sisal IT": "sisal",
+    "Snai IT": "snai",
+    "Eurobet IT": "eurobet",
+    "Planetwin365 IT": "planetwin365",
+    "Betflag IT": "betflag",
+    "Bet365 IT": "bet365",
+    "EPLAY24 IT": "eplay24",
 }
 
 def normalize_market(raw_market: str, line: Any = None, period: str = "") -> str:
@@ -78,6 +88,7 @@ class OddsPapiService:
         self.api_key = api_key
         self.session = requests.Session()
         self.api_calls = 0
+        self._markets = None
 
     def _headers(self):
         return {"Authorization": f"Bearer {self.api_key}", "x-api-key": self.api_key}
@@ -103,16 +114,33 @@ class OddsPapiService:
         now = datetime.now(timezone.utc)
         end = now + timedelta(hours=LOOKAHEAD_HOURS)
         params = {
-            "sport": "soccer",
-            "from": now.isoformat(),
-            "to": end.isoformat(),
+            "sportId": ODDSPAPI_SPORT_ID,
+            "from": now.isoformat(timespec="seconds").replace("+00:00", "Z"),
+            "to": end.isoformat(timespec="seconds").replace("+00:00", "Z"),
+            "language": ODDSPAPI_LANGUAGE,
+            "statusId": ODDSPAPI_STATUS_ID,
+            "hasOdds": "true",
+            "bookmakers": ",".join(BOOKMAKER_SLUGS[b] for b in BOOKMAKERS if b in BOOKMAKER_SLUGS),
         }
-        # L'API può esporre naming diversi a seconda del piano; proviamo endpoint comuni.
-        for path in ["/odds", "/events", "/sports/soccer/odds"]:
-            data = self._get(path, params)
-            if data:
-                return data.get("data", data.get("events", data)) if isinstance(data, dict) else data
-        return []
+        data = self._get("/v4/fixtures", params)
+        if isinstance(data, dict):
+            return data.get("data", data.get("fixtures", data.get("events", data)))
+        return data or []
+
+    def fetch_fixture_odds(self, fixture_id: str):
+        return self._get("/v4/odds", {
+            "fixtureId": fixture_id,
+            "bookmakers": ",".join(BOOKMAKER_SLUGS[b] for b in BOOKMAKERS if b in BOOKMAKER_SLUGS),
+            "language": ODDSPAPI_LANGUAGE,
+            "oddsFormat": "decimal",
+            "verbosity": 3,
+        }) or {}
+
+    def market_by_id(self, market_id: Any) -> Dict[str, Any]:
+        if self._markets is None:
+            data = self._get("/v4/markets", {"language": ODDSPAPI_LANGUAGE}) or []
+            self._markets = {str(m["marketId"]): m for m in data if isinstance(m, dict) and "marketId" in m}
+        return self._markets.get(str(market_id), {})
 
     def parse_events(self) -> List[Dict[str, Any]]:
         raw_events = self.fetch_raw_events()
@@ -127,12 +155,14 @@ class OddsPapiService:
             if not isinstance(ev, dict):
                 log.warning("OddsPapi event ignored because it is %s", type(ev).__name__)
                 continue
-            event_id = str(ev.get("id") or ev.get("event_id") or ev.get("fixture_id") or "")
-            home = ev.get("home_team") or ev.get("home") or ev.get("homeTeam") or ev.get("participants", [{}])[0].get("name", "")
-            away = ev.get("away_team") or ev.get("away") or ev.get("awayTeam") or (ev.get("participants", [{}, {}])[1].get("name", "") if len(ev.get("participants", [])) > 1 else "")
-            league = normalize_league(ev.get("league") or ev.get("competition") or ev.get("tournament") or "")
-            start_time = ev.get("start_time") or ev.get("commence_time") or ev.get("startTime") or ev.get("date") or ""
+            event_id = str(ev.get("fixtureId") or ev.get("id") or ev.get("event_id") or ev.get("fixture_id") or "")
+            home = ev.get("participant1Name") or ev.get("home_team") or ev.get("home") or ev.get("homeTeam") or ev.get("participants", [{}])[0].get("name", "")
+            away = ev.get("participant2Name") or ev.get("away_team") or ev.get("away") or ev.get("awayTeam") or (ev.get("participants", [{}, {}])[1].get("name", "") if len(ev.get("participants", [])) > 1 else "")
+            league = normalize_league(ev.get("tournamentName") or ev.get("league") or ev.get("competition") or ev.get("tournament") or ev.get("categoryName") or "")
+            start_time = ev.get("startTime") or ev.get("start_time") or ev.get("commence_time") or ev.get("date") or ""
             odds_rows = self.parse_odds(ev)
+            if event_id and not odds_rows and ev.get("hasOdds") is True:
+                odds_rows = self.parse_odds(self.fetch_fixture_odds(event_id))
             if event_id and home and away:
                 parsed.append({
                     "odds_event_id": event_id,
@@ -148,6 +178,35 @@ class OddsPapiService:
 
     def parse_odds(self, ev: Dict[str, Any]) -> List[Dict[str, Any]]:
         rows = []
+        if isinstance(ev.get("bookmakerOdds"), dict):
+            for raw_bookmaker, book in ev["bookmakerOdds"].items():
+                if not isinstance(book, dict) or book.get("suspended") is True:
+                    continue
+                bookmaker = normalize_bookmaker(raw_bookmaker)
+                if bookmaker not in BOOKMAKERS:
+                    continue
+                for market_id, market in (book.get("markets") or {}).items():
+                    if not isinstance(market, dict) or market.get("marketActive") is False:
+                        continue
+                    meta = self.market_by_id(market_id)
+                    raw_market = meta.get("marketName") or market.get("bookmakerMarketId") or str(market_id)
+                    normalized_market = normalize_market(raw_market, meta.get("handicap"), meta.get("period", ""))
+                    outcomes_meta = {str(o.get("outcomeId")): o.get("outcomeName") for o in meta.get("outcomes", []) if isinstance(o, dict)}
+                    for outcome_id, outcome in (market.get("outcomes") or {}).items():
+                        if not isinstance(outcome, dict):
+                            continue
+                        selection = normalize_selection(outcomes_meta.get(str(outcome_id)) or "")
+                        for player in (outcome.get("players") or {}).values():
+                            if not isinstance(player, dict) or player.get("active") is False:
+                                continue
+                            price = player.get("price")
+                            if not selection:
+                                selection = normalize_selection(str(player.get("bookmakerOutcomeId") or ""))
+                            try:
+                                rows.append({"bookmaker": bookmaker, "market": normalized_market, "selection": selection, "odd": float(price)})
+                            except Exception:
+                                continue
+            return rows
         bookmakers = ev.get("bookmakers") or ev.get("sites") or ev.get("odds") or []
         if isinstance(bookmakers, dict):
             bookmakers = [{"title": k, "markets": v} for k, v in bookmakers.items()]
