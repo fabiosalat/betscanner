@@ -23,6 +23,24 @@ SELECTION_ALIASES = {
     "over": "OVER", "under": "UNDER"
 }
 
+BOOKMAKER_ALIASES = {
+    "sisal": "Sisal IT",
+    "sisal it": "Sisal IT",
+    "snai": "Snai IT",
+    "snai it": "Snai IT",
+    "eurobet": "Eurobet IT",
+    "eurobet it": "Eurobet IT",
+    "planetwin365": "Planetwin365 IT",
+    "planet win 365": "Planetwin365 IT",
+    "planetwin365 it": "Planetwin365 IT",
+    "betflag": "Betflag IT",
+    "betflag it": "Betflag IT",
+    "bet365": "Bet365 IT",
+    "bet365 it": "Bet365 IT",
+    "eplay24": "EPLAY24 IT",
+    "eplay24 it": "EPLAY24 IT",
+}
+
 def normalize_market(raw_market: str, line: Any = None, period: str = "") -> str:
     name = (raw_market or "").lower().strip()
     period_l = (period or "").lower()
@@ -50,6 +68,10 @@ def normalize_selection(raw_selection: str) -> str:
     if "yes" in s or "goal" == s: return "YES"
     if "no" in s: return "NO"
     return raw_selection.upper().strip()
+
+def normalize_bookmaker(raw_bookmaker: str) -> str:
+    key = (raw_bookmaker or "").lower().strip().replace("_", " ").replace("-", " ")
+    return BOOKMAKER_ALIASES.get(key, raw_bookmaker or "")
 
 class OddsPapiService:
     def __init__(self, api_key: str = ODDSPAPI_KEY):
@@ -84,7 +106,6 @@ class OddsPapiService:
             "sport": "soccer",
             "from": now.isoformat(),
             "to": end.isoformat(),
-            "bookmakers": ",".join(BOOKMAKERS),
         }
         # L'API può esporre naming diversi a seconda del piano; proviamo endpoint comuni.
         for path in ["/odds", "/events", "/sports/soccer/odds"]:
@@ -137,7 +158,7 @@ class OddsPapiService:
             if not isinstance(book, dict):
                 log.warning("OddsPapi bookmaker ignored because it is %s", type(book).__name__)
                 continue
-            bookmaker = book.get("title") or book.get("name") or book.get("bookmaker") or book.get("key") or ""
+            bookmaker = normalize_bookmaker(book.get("title") or book.get("name") or book.get("bookmaker") or book.get("key") or "")
             if bookmaker not in BOOKMAKERS:
                 continue
             markets = book.get("markets") or book.get("bets") or []
