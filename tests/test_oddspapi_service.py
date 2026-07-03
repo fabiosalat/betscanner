@@ -35,6 +35,7 @@ def test_fetch_raw_events_uses_v4_fixtures(monkeypatch):
 
 def test_get_reports_unauthorized_oddspapi_key(monkeypatch):
     service = OddsPapiService(api_key=" x ")
+    captured = {}
 
     class Response:
         status_code = 401
@@ -42,10 +43,15 @@ def test_get_reports_unauthorized_oddspapi_key(monkeypatch):
         def raise_for_status(self):
             raise requests.HTTPError("401")
 
-    monkeypatch.setattr(service.session, "get", lambda *args, **kwargs: Response())
+    def fake_get(*args, **kwargs):
+        captured["params"] = kwargs["params"]
+        return Response()
+
+    monkeypatch.setattr(service.session, "get", fake_get)
 
     with pytest.raises(RuntimeError, match="ODDSPAPI_KEY non valida"):
         service._get("/v4/fixtures", {})
+    assert captured["params"]["apiKey"] == "x"
 
 
 def test_parse_events_fetches_v4_odds_for_fixtures_with_odds(monkeypatch):

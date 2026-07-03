@@ -91,16 +91,14 @@ class OddsPapiService:
         self.api_calls = 0
         self._markets = None
 
-    def _headers(self):
-        return {"Authorization": f"Bearer {self.api_key}", "x-api-key": self.api_key}
-
     def _get(self, path: str, params: Dict[str, Any]):
         url = f"{ODDSPAPI_BASE_URL}{path}"
         last_exc = None
+        params = {**params, "apiKey": self.api_key}
         for _ in range(RETRY_COUNT):
             try:
                 self.api_calls += 1
-                r = self.session.get(url, headers=self._headers(), params=params, timeout=REQUEST_TIMEOUT)
+                r = self.session.get(url, params=params, timeout=REQUEST_TIMEOUT)
                 if r.status_code == 404:
                     return None
                 if r.status_code == 401:
