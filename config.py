@@ -25,6 +25,7 @@ BOOKMAKERS = ["Sisal IT","Snai IT","Eurobet IT","Planetwin365 IT","Betflag IT","
 SUPPORTED_MARKETS = ["MATCH_ODDS","MATCH_ODDS_HT","DOUBLE_CHANCE","BTTS","BTTS_HT","OVER_UNDER_05","OVER_UNDER_15","OVER_UNDER_25","OVER_UNDER_35","OVER_UNDER_45","OVER_UNDER_HT_05","OVER_UNDER_HT_15"]
 ODDSPAPI_KEY = env("ODDSPAPI_KEY")
 BETFAIR_APP_KEY = env("BETFAIR_APP_KEY")
+BETFAIR_SSOID = env("BETFAIR_SSOID")
 BETFAIR_USERNAME = env("BETFAIR_USERNAME")
 BETFAIR_PASSWORD = env("BETFAIR_PASSWORD")
 BETFAIR_CERT = env("BETFAIR_CERT")
@@ -39,13 +40,15 @@ def missing_api_credentials():
     missing = []
     if not ODDSPAPI_KEY:
         missing.append("ODDSPAPI_KEY")
-    for key, value in {
-        "BETFAIR_APP_KEY": BETFAIR_APP_KEY,
-        "BETFAIR_USERNAME": BETFAIR_USERNAME,
-        "BETFAIR_PASSWORD": BETFAIR_PASSWORD,
-    }.items():
-        if not value:
-            missing.append(key)
-    if not ((BETFAIR_CERT and BETFAIR_KEY) or (os.path.exists(BETFAIR_CERT_FILE) and os.path.exists(BETFAIR_KEY_FILE))):
-        missing.extend(["BETFAIR_CERT", "BETFAIR_KEY"])
+    if not BETFAIR_APP_KEY:
+        missing.append("BETFAIR_APP_KEY")
+    if not BETFAIR_SSOID:
+        for key, value in {
+            "BETFAIR_USERNAME": BETFAIR_USERNAME,
+            "BETFAIR_PASSWORD": BETFAIR_PASSWORD,
+        }.items():
+            if not value:
+                missing.append(key)
+        if not ((BETFAIR_CERT and BETFAIR_KEY) or (os.path.exists(BETFAIR_CERT_FILE) and os.path.exists(BETFAIR_KEY_FILE))):
+            missing.extend(["BETFAIR_CERT", "BETFAIR_KEY"])
     return missing

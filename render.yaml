@@ -27,6 +27,8 @@ services:
         sync: false
       - key: BETFAIR_APP_KEY
         sync: false
+      - key: BETFAIR_SSOID
+        sync: false
       - key: BETFAIR_USERNAME
         sync: false
       - key: BETFAIR_PASSWORD

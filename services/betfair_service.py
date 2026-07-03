@@ -3,7 +3,7 @@ from pathlib import Path
 import os
 import betfairlightweight
 from config import (
-    BETFAIR_USERNAME, BETFAIR_PASSWORD, BETFAIR_APP_KEY, BETFAIR_CERT, BETFAIR_KEY,
+    BETFAIR_USERNAME, BETFAIR_PASSWORD, BETFAIR_APP_KEY, BETFAIR_SSOID, BETFAIR_CERT, BETFAIR_KEY,
     BETFAIR_CERT_FILE, BETFAIR_KEY_FILE, BETFAIR_EVENT_TYPE_SOCCER, LOOKAHEAD_HOURS
 )
 
@@ -55,10 +55,16 @@ class BetfairService:
             key_path.write_text(BETFAIR_KEY.replace('\\n', '\n'), encoding='utf-8')
 
     def login(self):
+        if not BETFAIR_APP_KEY:
+            raise RuntimeError("Variabili Betfair mancanti: BETFAIR_APP_KEY")
+        self.trading = betfairlightweight.APIClient(BETFAIR_USERNAME or "", BETFAIR_PASSWORD or "", app_key=BETFAIR_APP_KEY)
+        if BETFAIR_SSOID:
+            self.trading.set_session_token(BETFAIR_SSOID.strip())
+            return self.trading
+
         missing = [k for k,v in {
             "BETFAIR_USERNAME": BETFAIR_USERNAME,
             "BETFAIR_PASSWORD": BETFAIR_PASSWORD,
-            "BETFAIR_APP_KEY": BETFAIR_APP_KEY,
         }.items() if not v]
         if not Path(BETFAIR_CERT_FILE).exists():
             missing.append("BETFAIR_CERT")
