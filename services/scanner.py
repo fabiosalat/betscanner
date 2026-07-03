@@ -30,6 +30,7 @@ class QuoteScanner:
             events_count = len(parsed_events)
 
             odds_event_payloads = []
+            bookmaker_odds_count = 0
             for ev in parsed_events:
                 event_id = self.repo.upsert_event(Event(
                     odds_event_id=ev["odds_event_id"],
@@ -43,6 +44,7 @@ class QuoteScanner:
                 ev["db_event_id"] = event_id
                 odds_event_payloads.append(ev)
                 book_rows = [BookmakerOdd(event_id, o["bookmaker"], o["market"], o["selection"], o["odd"]) for o in ev.get("odds", [])]
+                bookmaker_odds_count += len(book_rows)
                 self.repo.insert_odds_bulk(book_rows)
 
             catalogues = self.betfair.list_market_catalogue()
@@ -74,13 +76,30 @@ class QuoteScanner:
 
             joined = self.repo.get_joined_odds()
             self.repo.clear_opportunities()
-            self.repo.save_opportunities(self.surebet.calculate(joined))
-            self.repo.save_opportunities(self.matched.calculate(joined))
+            surebets = self.surebet.calculate(joined)
+            matched = self.matched.calculate(joined)
+            self.repo.save_opportunities(surebets)
+            self.repo.save_opportunities(matched)
             self.repo.refresh_stats()
-            self.repo.set_cache("last_refresh", {"timestamp": time.time(), "events": events_count, "api_calls": api_calls})
+            stats = {
+                "timestamp": time.time(),
+                "events": events_count,
+                "bookmaker_odds": bookmaker_odds_count,
+                "betfair_markets": len(catalogues),
+                "betfair_lays": len(bf_lays),
+                "matched_lays": len(betfair_rows),
+                "joined_odds": len(joined),
+                "surebets": len(surebets),
+                "matched": len(matched),
+                "api_calls": api_calls,
+            }
+            self.repo.set_cache("last_refresh", stats)
             duration = time.time() - started
-            self.repo.save_refresh_history(duration, events_count, api_calls, "ok", "Refresh completato")
-            return {"status": "ok", "events": events_count, "api_calls": api_calls, "duration": duration}
+            message = "Refresh completato"
+            if not surebets and not matched:
+                message = "Refresh completato, nessuna opportunita nei criteri attuali"
+            self.repo.save_refresh_history(duration, events_count, api_calls, "ok", message)
+            return {"status": "ok", **stats, "duration": duration, "message": message}
         except Exception as exc:
             duration = time.time() - started
             log.exception("Refresh failed")

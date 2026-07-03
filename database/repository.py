@@ -126,6 +126,9 @@ class Repository:
         with get_connection() as conn:
             row = conn.execute("SELECT value FROM cache WHERE key=?", (key,)).fetchone()
             return row["value"] if row else None
+    def get_json_cache(self, key):
+        value = self.get_cache(key)
+        return json.loads(value) if value else None
 
     def save_refresh_history(self,duration,events_count,api_calls,status,message):
         with get_connection() as conn:

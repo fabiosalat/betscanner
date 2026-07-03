@@ -23,6 +23,7 @@ def index():
         surebets=repo.top_opportunities('surebet', MAX_RESULTS),
         matched=repo.top_opportunities('matched', MAX_RESULTS),
         last_refresh=repo.get_last_refresh(),
+        refresh_stats=repo.get_json_cache("last_refresh"),
         counts=repo.counts(),
         bookmakers=repo.top_bookmakers(10),
         missing_credentials=missing_api_credentials()
@@ -39,6 +40,7 @@ def refresh():
             surebets=repo.top_opportunities('surebet', MAX_RESULTS),
             matched=repo.top_opportunities('matched', MAX_RESULTS),
             last_refresh=repo.get_last_refresh(),
+            refresh_stats=repo.get_json_cache("last_refresh"),
             counts=repo.counts(),
             bookmakers=repo.top_bookmakers(10),
             missing_credentials=missing,
