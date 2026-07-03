@@ -54,6 +54,48 @@ def test_get_reports_unauthorized_oddspapi_key(monkeypatch):
     assert captured["params"]["apiKey"] == "x"
 
 
+def test_get_reports_rate_limit_without_retry(monkeypatch):
+    service = OddsPapiService(api_key="x")
+    calls = []
+
+    class Response:
+        status_code = 429
+
+        def raise_for_status(self):
+            raise requests.HTTPError("429")
+
+    monkeypatch.setattr(service.session, "get", lambda *args, **kwargs: calls.append(kwargs) or Response())
+
+    with pytest.raises(RuntimeError, match="rate limit"):
+        service._get("/v4/fixtures", {})
+    assert len(calls) == 1
+
+
+def test_fetch_odds_by_tournaments_batches_unique_tournaments(monkeypatch):
+    service = OddsPapiService(api_key="x")
+    batches = []
+    monkeypatch.setattr("services.oddspapi_service.ODDS_BATCH_SIZE", 2)
+    monkeypatch.setattr("services.oddspapi_service.sleep", lambda seconds: None)
+
+    def fake_fetch_tournament_odds(tournament_ids):
+        batches.append(tournament_ids)
+        return [{"fixtureId": f"id{tournament_id}", "tournamentId": tournament_id} for tournament_id in tournament_ids]
+
+    monkeypatch.setattr(service, "fetch_tournament_odds", fake_fetch_tournament_odds)
+
+    rows = service.fetch_odds_by_tournaments([
+        {"fixtureId": "a", "tournamentId": 2, "hasOdds": True},
+        {"fixtureId": "b", "tournamentId": 1, "hasOdds": True},
+        {"fixtureId": "c", "tournamentId": 2, "hasOdds": True},
+        {"fixtureId": "d", "tournamentId": 3, "hasOdds": False},
+        {"fixtureId": "e", "tournamentId": 4, "hasOdds": True},
+    ])
+
+    assert batches == [[1, 2], [4]]
+    assert rows["id1"]["tournamentId"] == 1
+    assert rows["id4"]["tournamentId"] == 4
+
+
 def test_parse_events_fetches_v4_odds_for_fixtures_with_odds(monkeypatch):
     service = OddsPapiService(api_key="x")
     monkeypatch.setattr(service, "fetch_raw_events", lambda: [{
@@ -63,6 +105,7 @@ def test_parse_events_fetches_v4_odds_for_fixtures_with_odds(monkeypatch):
         "tournamentName": "Serie A",
         "hasOdds": True,
     }])
+    monkeypatch.setattr(service, "fetch_odds_by_tournaments", lambda events: {})
     monkeypatch.setattr(service, "fetch_fixture_odds", lambda fixture_id: {
         "bookmakerOdds": {
             "bet365": {
@@ -92,6 +135,7 @@ def test_parse_events_supports_v4_fixture_shape(monkeypatch):
         "startTime": "2026-04-13T19:00:00.000Z",
         "tournamentName": "Premier League",
     }])
+    monkeypatch.setattr(service, "fetch_odds_by_tournaments", lambda events: {})
 
     assert service.parse_events() == [{
         "odds_event_id": "id1000001761301153",

@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 import logging
+from time import sleep
 import requests
 from typing import Dict, List, Any
 from config import ODDSPAPI_KEY, BOOKMAKERS, LOOKAHEAD_HOURS, REQUEST_TIMEOUT, RETRY_COUNT, ODDSPAPI_SPORT_ID, ODDSPAPI_LANGUAGE, ODDSPAPI_STATUS_ID
@@ -8,6 +9,8 @@ from matching.normalizer import normalize_team_name, normalize_league
 ODDSPAPI_BASE_URL = "https://api.oddspapi.io"
 log = logging.getLogger(__name__)
 MAX_FIXTURES_LOOKAHEAD_HOURS = 47
+ODDS_BATCH_SIZE = 20
+ODDS_BATCH_COOLDOWN_SECONDS = 1.1
 
 MARKET_ALIASES = {
     "h2h": "MATCH_ODDS", "match odds": "MATCH_ODDS", "1x2": "MATCH_ODDS",
@@ -103,10 +106,12 @@ class OddsPapiService:
                     return None
                 if r.status_code == 401:
                     raise RuntimeError("ODDSPAPI_KEY non valida o non autorizzata da OddsPapi")
+                if r.status_code == 429:
+                    raise RuntimeError("OddsPapi rate limit: troppe richieste ravvicinate, attendi il cooldown prima di riprovare")
                 r.raise_for_status()
                 return r.json()
             except Exception as exc:
-                if str(exc).startswith("ODDSPAPI_KEY"):
+                if str(exc).startswith(("ODDSPAPI_KEY", "OddsPapi rate limit")):
                     raise
                 last_exc = exc
         raise RuntimeError(f"OddsPapi request failed: {last_exc}")
@@ -139,6 +144,28 @@ class OddsPapiService:
             "verbosity": 3,
         }) or {}
 
+    def fetch_tournament_odds(self, tournament_ids: List[Any]):
+        return self._get("/v4/odds-by-tournaments", {
+            "tournamentIds": ",".join(str(t) for t in tournament_ids),
+            "bookmakers": ",".join(BOOKMAKER_SLUGS[b] for b in BOOKMAKERS if b in BOOKMAKER_SLUGS),
+            "language": ODDSPAPI_LANGUAGE,
+            "oddsFormat": "decimal",
+            "verbosity": 3,
+        }) or []
+
+    def fetch_odds_by_tournaments(self, events: List[Dict[str, Any]]):
+        tournament_ids = sorted({ev.get("tournamentId") for ev in events if ev.get("hasOdds") is True and ev.get("tournamentId")})
+        odds_by_fixture = {}
+        for index in range(0, len(tournament_ids), ODDS_BATCH_SIZE):
+            if index:
+                sleep(ODDS_BATCH_COOLDOWN_SECONDS)
+            data = self.fetch_tournament_odds(tournament_ids[index:index + ODDS_BATCH_SIZE])
+            items = data if isinstance(data, list) else data.get("data", data.get("fixtures", [])) if isinstance(data, dict) else []
+            for item in items:
+                if isinstance(item, dict) and item.get("fixtureId"):
+                    odds_by_fixture[str(item["fixtureId"])] = item
+        return odds_by_fixture
+
     def market_by_id(self, market_id: Any) -> Dict[str, Any]:
         if self._markets is None:
             data = self._get("/v4/markets", {"language": ODDSPAPI_LANGUAGE}) or []
@@ -153,6 +180,7 @@ class OddsPapiService:
         if not isinstance(raw_events, list):
             log.warning("OddsPapi response shape not recognized for events: type=%s", type(raw_events).__name__)
             raw_events = []
+        odds_by_fixture = self.fetch_odds_by_tournaments(raw_events)
         parsed = []
         for ev in raw_events or []:
             if not isinstance(ev, dict):
@@ -163,8 +191,8 @@ class OddsPapiService:
             away = ev.get("participant2Name") or ev.get("away_team") or ev.get("away") or ev.get("awayTeam") or (ev.get("participants", [{}, {}])[1].get("name", "") if len(ev.get("participants", [])) > 1 else "")
             league = normalize_league(ev.get("tournamentName") or ev.get("league") or ev.get("competition") or ev.get("tournament") or ev.get("categoryName") or "")
             start_time = ev.get("startTime") or ev.get("start_time") or ev.get("commence_time") or ev.get("date") or ""
-            odds_rows = self.parse_odds(ev)
-            if event_id and not odds_rows and ev.get("hasOdds") is True:
+            odds_rows = self.parse_odds(odds_by_fixture.get(event_id, ev))
+            if event_id and not odds_rows and ev.get("hasOdds") is True and not ev.get("tournamentId"):
                 odds_rows = self.parse_odds(self.fetch_fixture_odds(event_id))
             if event_id and home and away:
                 parsed.append({
