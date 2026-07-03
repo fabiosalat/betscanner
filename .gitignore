@@ -4,6 +4,7 @@
 certs/
 instance/*.db
 instance/*.sqlite
+instance/*.xlsx
 logs/
 backup/
 __pycache__/

@@ -19,3 +19,12 @@ def test_refresh_falls_back_when_credentials_are_missing(monkeypatch):
 
     assert response.status_code == 200
     assert response.get_json()["status"] == "missing_credentials"
+
+
+def test_export_xlsx_smoke():
+    import app as app_module
+
+    response = app_module.app.test_client().get("/export/surebet")
+
+    assert response.status_code == 200
+    assert response.headers["Content-Type"].startswith("application/vnd.openxmlformats")

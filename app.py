@@ -2,7 +2,7 @@ import logging
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from flask import Flask, render_template, redirect, url_for, request, jsonify, send_file
-import pandas as pd
+from openpyxl import Workbook
 from config import SECRET_KEY, MAX_RESULTS, missing_api_credentials
 from database.init_db import init_db
 from database.repository import Repository
@@ -65,8 +65,15 @@ def export(kind):
         return 'Tipo export non valido', 400
     rows = [dict(r) for r in repo.top_opportunities(kind, 500)]
     path = Path('instance') / f'{kind}.xlsx'
-    pd.DataFrame(rows).to_excel(path, index=False)
-    return send_file(path, as_attachment=True)
+    workbook = Workbook()
+    sheet = workbook.active
+    if rows:
+        headers = list(rows[0])
+        sheet.append(headers)
+        for row in rows:
+            sheet.append([row.get(header) for header in headers])
+    workbook.save(path)
+    return send_file(path, as_attachment=True, mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 @app.route('/health')
 def health():
