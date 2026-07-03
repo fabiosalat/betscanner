@@ -36,6 +36,9 @@ L'app inizializza automaticamente SQLite all'avvio e risponde su `/health` con:
 
 ```env
 ODDSPAPI_KEY=
+ODDSPAPI_SPORT_ID=10
+ODDSPAPI_LANGUAGE=en
+ODDSPAPI_STATUS_ID=0
 BETFAIR_APP_KEY=
 BETFAIR_USERNAME=
 BETFAIR_PASSWORD=
