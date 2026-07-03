@@ -7,6 +7,7 @@ from services.betfair_service import BetfairService
 from matching.event_matcher import EventMatcher
 from engines.surebet_engine import SurebetEngine
 from engines.matched_engine import MatchedEngine
+from config import ODDSPAPI_RATE_LIMIT_COOLDOWN_SECONDS
 
 log = logging.getLogger(__name__)
 
@@ -24,7 +25,12 @@ class QuoteScanner:
         api_calls = 0
         events_count = 0
         try:
-            self.repo.clear_current_refresh_data()
+            rate_limited_until = float(self.repo.get_cache("oddspapi_rate_limited_until") or 0)
+            if rate_limited_until > started:
+                wait_seconds = int(rate_limited_until - started)
+                message = f"OddsPapi in rate limit: attendi circa {wait_seconds} secondi prima di riprovare"
+                return {"status": "rate_limited", "message": message, "events": 0, "api_calls": 0, "duration": 0}
+
             parsed_events = self.odds.parse_events()
             api_calls += self.odds.api_calls
             events_count = len(parsed_events)
@@ -47,6 +53,7 @@ class QuoteScanner:
                 self.repo.save_refresh_history(duration, events_count, api_calls, "ok", message)
                 return {"status": "ok", **stats, "duration": duration, "message": message}
 
+            self.repo.clear_current_refresh_data()
             odds_event_payloads = []
             bookmaker_odds_count = 0
             for ev in parsed_events:
@@ -120,6 +127,10 @@ class QuoteScanner:
             return {"status": "ok", **stats, "duration": duration, "message": message}
         except Exception as exc:
             duration = time.time() - started
+            if not api_calls:
+                api_calls += getattr(self.odds, "api_calls", 0)
             log.exception("Refresh failed")
+            if str(exc).startswith("OddsPapi rate limit"):
+                self.repo.set_cache("oddspapi_rate_limited_until", time.time() + ODDSPAPI_RATE_LIMIT_COOLDOWN_SECONDS)
             self.repo.save_refresh_history(duration, events_count, api_calls, "error", str(exc))
             return {"status": "error", "message": str(exc), "events": events_count, "api_calls": api_calls, "duration": duration}

@@ -13,6 +13,13 @@ class FailingBetfair:
         raise AssertionError("Betfair should not be called without OddsPapi events")
 
 
+class RateLimitedOdds:
+    api_calls = 1
+
+    def parse_events(self):
+        raise RuntimeError("OddsPapi rate limit: troppe richieste ravvicinate, attendi il cooldown prima di riprovare")
+
+
 def test_refresh_skips_betfair_when_oddspapi_has_no_events():
     from database.init_db import init_db
 
@@ -26,3 +33,20 @@ def test_refresh_skips_betfair_when_oddspapi_has_no_events():
     assert result["status"] == "ok"
     assert result["events"] == 0
     assert result["betfair_markets"] == 0
+
+
+def test_refresh_caches_oddspapi_rate_limit():
+    from database.init_db import init_db
+
+    init_db()
+    scanner = QuoteScanner()
+    scanner.odds = RateLimitedOdds()
+    scanner.betfair = FailingBetfair()
+
+    first = scanner.refresh()
+    second = scanner.refresh()
+
+    assert first["status"] == "error"
+    assert first["api_calls"] == 1
+    assert second["status"] == "rate_limited"
+    assert second["api_calls"] == 0
