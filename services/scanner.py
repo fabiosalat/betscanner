@@ -72,9 +72,17 @@ class QuoteScanner:
                 bookmaker_odds_count += len(book_rows)
                 self.repo.insert_odds_bulk(book_rows)
 
-            catalogues = self.betfair.list_market_catalogue()
-            bf_lays = self.betfair.get_lay_odds_for_catalogues(catalogues)
-            api_calls += self.betfair.api_calls
+            betfair_error = ""
+            try:
+                catalogues = self.betfair.list_market_catalogue()
+                bf_lays = self.betfair.get_lay_odds_for_catalogues(catalogues)
+                api_calls += self.betfair.api_calls
+            except Exception as exc:
+                api_calls += self.betfair.api_calls
+                catalogues = []
+                bf_lays = []
+                betfair_error = f"Betfair non disponibile: {exc}"
+                log.warning(betfair_error, exc_info=True)
 
             lay_by_market_id = {}
             for lay in bf_lays:
@@ -120,11 +128,12 @@ class QuoteScanner:
             }
             self.repo.set_cache("last_refresh", stats)
             duration = time.time() - started
-            message = "Refresh completato"
+            message = betfair_error or "Refresh completato"
             if not surebets and not matched:
-                message = "Refresh completato, nessuna opportunita nei criteri attuali"
-            self.repo.save_refresh_history(duration, events_count, api_calls, "ok", message)
-            return {"status": "ok", **stats, "duration": duration, "message": message}
+                message = betfair_error or "Refresh completato, nessuna opportunita nei criteri attuali"
+            status = "warning" if betfair_error else "ok"
+            self.repo.save_refresh_history(duration, events_count, api_calls, status, message)
+            return {"status": status, **stats, "duration": duration, "message": message}
         except Exception as exc:
             duration = time.time() - started
             if not api_calls:

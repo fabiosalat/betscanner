@@ -49,6 +49,11 @@ class Repository:
             conn.execute("DELETE FROM opportunities")
             conn.commit()
 
+    def clear_opportunities(self):
+        with get_connection() as conn:
+            conn.execute("DELETE FROM opportunities")
+            conn.commit()
+
     def get_joined_odds(self):
         with get_connection() as conn:
             return conn.execute("""

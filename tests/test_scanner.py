@@ -20,6 +20,29 @@ class RateLimitedOdds:
         raise RuntimeError("OddsPapi rate limit: troppe richieste ravvicinate, attendi il cooldown prima di riprovare")
 
 
+class OneEventOdds:
+    api_calls = 2
+
+    def parse_events(self):
+        return [{
+            "odds_event_id": "odds-1",
+            "league": "FIFA World Cup",
+            "home_team": "Team A",
+            "away_team": "Team B",
+            "start_time": "2026-07-04T12:00:00Z",
+            "normalized_home": "team a",
+            "normalized_away": "team b",
+            "odds": [{"bookmaker": "Sisal IT", "market": "MATCH_ODDS", "selection": "HOME", "odd": 2.1}],
+        }]
+
+
+class ForbiddenBetfair:
+    api_calls = 1
+
+    def list_market_catalogue(self):
+        raise RuntimeError("Status code error: 403")
+
+
 def test_refresh_skips_betfair_when_oddspapi_has_no_events():
     from database.init_db import init_db
     from database.repository import Repository
@@ -54,3 +77,22 @@ def test_refresh_caches_oddspapi_rate_limit():
     assert first["api_calls"] == 1
     assert second["status"] == "rate_limited"
     assert second["api_calls"] == 0
+
+
+def test_refresh_keeps_oddspapi_data_when_betfair_fails():
+    from database.init_db import init_db
+    from database.repository import Repository
+
+    init_db()
+    Repository().set_cache("oddspapi_rate_limited_until", 0)
+    scanner = QuoteScanner()
+    scanner.odds = OneEventOdds()
+    scanner.betfair = ForbiddenBetfair()
+
+    result = scanner.refresh()
+
+    assert result["status"] == "warning"
+    assert result["events"] == 1
+    assert result["bookmaker_odds"] == 1
+    assert result["betfair_markets"] == 0
+    assert "Betfair non disponibile" in result["message"]
