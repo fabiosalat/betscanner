@@ -19,12 +19,13 @@ def test_betfair_login_uses_ssoid(monkeypatch):
     monkeypatch.setattr(betfair_service, "BETFAIR_SSOID", " token ")
     monkeypatch.setattr(betfair_service, "BETFAIR_USERNAME", "")
     monkeypatch.setattr(betfair_service, "BETFAIR_PASSWORD", "")
+    monkeypatch.setattr(betfair_service, "BETFAIR_LOCALE", "italy")
 
     created = {}
 
     class Client:
-        def __init__(self, username, password, app_key, certs=None):
-            created["args"] = (username, password, app_key, certs)
+        def __init__(self, username, password, app_key, certs=None, cert_files=None, locale=None):
+            created["args"] = (username, password, app_key, certs, cert_files, locale)
             self.session_token = None
 
         def set_session_token(self, token):
@@ -34,8 +35,39 @@ def test_betfair_login_uses_ssoid(monkeypatch):
 
     trading = betfair_service.BetfairService().login()
 
-    assert created["args"] == ("", "", "app", None)
+    assert created["args"] == ("", "", "app", None, None, "italy")
     assert trading.session_token == "token"
+
+
+def test_betfair_certificate_login_uses_italy_locale_and_cert_files(monkeypatch, tmp_path):
+    import services.betfair_service as betfair_service
+
+    cert = tmp_path / "client-2048.crt"
+    key = tmp_path / "client-2048.key"
+    cert.write_text("cert", encoding="utf-8")
+    key.write_text("key", encoding="utf-8")
+    monkeypatch.setattr(betfair_service, "BETFAIR_APP_KEY", "app")
+    monkeypatch.setattr(betfair_service, "BETFAIR_SSOID", "")
+    monkeypatch.setattr(betfair_service, "BETFAIR_USERNAME", "user")
+    monkeypatch.setattr(betfair_service, "BETFAIR_PASSWORD", "pass")
+    monkeypatch.setattr(betfair_service, "BETFAIR_CERT_FILE", str(cert))
+    monkeypatch.setattr(betfair_service, "BETFAIR_KEY_FILE", str(key))
+    monkeypatch.setattr(betfair_service, "BETFAIR_LOCALE", "italy")
+    created = {}
+
+    class Client:
+        def __init__(self, username, password, app_key, certs=None, cert_files=None, locale=None):
+            created["args"] = (username, password, app_key, certs, cert_files, locale)
+
+        def login(self):
+            created["login"] = True
+
+    monkeypatch.setattr(betfair_service.betfairlightweight, "APIClient", Client)
+
+    betfair_service.BetfairService().login()
+
+    assert created["args"] == ("user", "pass", "app", None, (str(cert), str(key)), "italy")
+    assert created["login"] is True
 
 
 def test_parse_market_catalogues_supports_lightweight_dicts():

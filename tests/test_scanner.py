@@ -43,11 +43,28 @@ class ForbiddenBetfair:
         raise RuntimeError("Status code error: 403")
 
 
+class UnusedOdds:
+    def parse_events(self):
+        raise AssertionError("OddsPapi should be paused in Betfair-only mode")
+
+
+class WorkingBetfair:
+    api_calls = 2
+
+    def list_market_catalogue(self):
+        return [{"market_id": "1.1"}]
+
+    def get_lay_odds_for_catalogues(self, catalogues):
+        return [{"market_id": "1.1"}]
+
+
 def test_refresh_skips_betfair_when_oddspapi_has_no_events():
     from database.init_db import init_db
     from database.repository import Repository
+    import services.scanner as scanner_module
 
     init_db()
+    scanner_module.BETFAIR_ONLY_MODE = False
     Repository().set_cache("oddspapi_rate_limited_until", 0)
     scanner = QuoteScanner()
     scanner.odds = EmptyOdds()
@@ -63,8 +80,10 @@ def test_refresh_skips_betfair_when_oddspapi_has_no_events():
 def test_refresh_caches_oddspapi_rate_limit():
     from database.init_db import init_db
     from database.repository import Repository
+    import services.scanner as scanner_module
 
     init_db()
+    scanner_module.BETFAIR_ONLY_MODE = False
     Repository().set_cache("oddspapi_rate_limited_until", 0)
     scanner = QuoteScanner()
     scanner.odds = RateLimitedOdds()
@@ -82,8 +101,10 @@ def test_refresh_caches_oddspapi_rate_limit():
 def test_refresh_keeps_oddspapi_data_when_betfair_fails():
     from database.init_db import init_db
     from database.repository import Repository
+    import services.scanner as scanner_module
 
     init_db()
+    scanner_module.BETFAIR_ONLY_MODE = False
     Repository().set_cache("oddspapi_rate_limited_until", 0)
     scanner = QuoteScanner()
     scanner.odds = OneEventOdds()
@@ -96,3 +117,22 @@ def test_refresh_keeps_oddspapi_data_when_betfair_fails():
     assert result["bookmaker_odds"] == 1
     assert result["betfair_markets"] == 0
     assert "Betfair non disponibile" in result["message"]
+
+
+def test_refresh_can_run_betfair_only(monkeypatch):
+    from database.init_db import init_db
+    import services.scanner as scanner_module
+
+    init_db()
+    monkeypatch.setattr(scanner_module, "BETFAIR_ONLY_MODE", True)
+    scanner = QuoteScanner()
+    scanner.odds = UnusedOdds()
+    scanner.betfair = WorkingBetfair()
+
+    result = scanner.refresh()
+
+    assert result["status"] == "ok"
+    assert result["events"] == 0
+    assert result["betfair_markets"] == 1
+    assert result["betfair_lays"] == 1
+    assert result["api_calls"] == 2

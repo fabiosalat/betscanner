@@ -7,7 +7,7 @@ from services.betfair_service import BetfairService
 from matching.event_matcher import EventMatcher
 from engines.surebet_engine import SurebetEngine
 from engines.matched_engine import MatchedEngine
-from config import ODDSPAPI_RATE_LIMIT_COOLDOWN_SECONDS
+from config import BETFAIR_ONLY_MODE, ODDSPAPI_RATE_LIMIT_COOLDOWN_SECONDS
 
 log = logging.getLogger(__name__)
 
@@ -25,6 +25,28 @@ class QuoteScanner:
         api_calls = 0
         events_count = 0
         try:
+            if BETFAIR_ONLY_MODE:
+                catalogues = self.betfair.list_market_catalogue()
+                bf_lays = self.betfair.get_lay_odds_for_catalogues(catalogues)
+                api_calls += self.betfair.api_calls
+                duration = time.time() - started
+                stats = {
+                    "timestamp": time.time(),
+                    "events": 0,
+                    "bookmaker_odds": 0,
+                    "betfair_markets": len(catalogues),
+                    "betfair_lays": len(bf_lays),
+                    "matched_lays": 0,
+                    "joined_odds": 0,
+                    "surebets": 0,
+                    "matched": 0,
+                    "api_calls": api_calls,
+                }
+                message = "Refresh Betfair-only completato"
+                self.repo.set_cache("last_refresh", stats)
+                self.repo.save_refresh_history(duration, 0, api_calls, "ok", message)
+                return {"status": "ok", **stats, "duration": duration, "message": message}
+
             rate_limited_until = float(self.repo.get_cache("oddspapi_rate_limited_until") or 0)
             if rate_limited_until > started:
                 wait_seconds = int(rate_limited_until - started)

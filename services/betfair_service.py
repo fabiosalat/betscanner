@@ -4,7 +4,7 @@ import os
 import betfairlightweight
 from config import (
     BETFAIR_USERNAME, BETFAIR_PASSWORD, BETFAIR_APP_KEY, BETFAIR_SSOID, BETFAIR_CERT, BETFAIR_KEY,
-    BETFAIR_CERT_FILE, BETFAIR_KEY_FILE, BETFAIR_EVENT_TYPE_SOCCER, LOOKAHEAD_HOURS
+    BETFAIR_CERT_FILE, BETFAIR_KEY_FILE, BETFAIR_EVENT_TYPE_SOCCER, BETFAIR_LOCALE, LOOKAHEAD_HOURS
 )
 
 BETFAIR_MARKETS = {
@@ -60,7 +60,7 @@ class BetfairService:
     def login(self):
         if not BETFAIR_APP_KEY:
             raise RuntimeError("Variabili Betfair mancanti: BETFAIR_APP_KEY")
-        self.trading = betfairlightweight.APIClient(BETFAIR_USERNAME or "", BETFAIR_PASSWORD or "", app_key=BETFAIR_APP_KEY)
+        self.trading = betfairlightweight.APIClient(BETFAIR_USERNAME or "", BETFAIR_PASSWORD or "", app_key=BETFAIR_APP_KEY, locale=BETFAIR_LOCALE)
         if BETFAIR_SSOID:
             self.trading.set_session_token(BETFAIR_SSOID.strip())
             return self.trading
@@ -75,8 +75,7 @@ class BetfairService:
             missing.append("BETFAIR_KEY")
         if missing:
             raise RuntimeError(f"Variabili Betfair mancanti: {', '.join(missing)}")
-        certs_dir = str(Path(BETFAIR_CERT_FILE).parent)
-        self.trading = betfairlightweight.APIClient(BETFAIR_USERNAME, BETFAIR_PASSWORD, app_key=BETFAIR_APP_KEY, certs=certs_dir)
+        self.trading = betfairlightweight.APIClient(BETFAIR_USERNAME, BETFAIR_PASSWORD, app_key=BETFAIR_APP_KEY, cert_files=(BETFAIR_CERT_FILE, BETFAIR_KEY_FILE), locale=BETFAIR_LOCALE)
         self.trading.login()
         return self.trading
 
