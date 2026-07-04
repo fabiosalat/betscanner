@@ -3,13 +3,13 @@ import logging
 from time import monotonic, sleep
 import requests
 from typing import Dict, List, Any
-from config import ODDSPAPI_KEY, BOOKMAKERS, LOOKAHEAD_HOURS, REQUEST_TIMEOUT, RETRY_COUNT, ODDSPAPI_SPORT_ID, ODDSPAPI_LANGUAGE, ODDSPAPI_STATUS_ID, ODDSPAPI_REQUEST_COOLDOWN_SECONDS
+from config import ODDSPAPI_KEY, BOOKMAKERS, LOOKAHEAD_HOURS, REQUEST_TIMEOUT, RETRY_COUNT, ODDSPAPI_SPORT_ID, ODDSPAPI_LANGUAGE, ODDSPAPI_STATUS_ID, ODDSPAPI_REQUEST_COOLDOWN_SECONDS, ODDSPAPI_ALLOWED_TOURNAMENTS, ODDSPAPI_MAX_BOOKMAKERS
 from matching.normalizer import normalize_team_name, normalize_league
 
 ODDSPAPI_BASE_URL = "https://api.oddspapi.io"
 log = logging.getLogger(__name__)
 MAX_FIXTURES_LOOKAHEAD_HOURS = 47
-ODDS_BATCH_SIZE = 20
+ODDS_BATCH_SIZE = 5
 STATIC_ENDPOINTS = {"/v4/sports", "/v4/bookmakers", "/v4/markets", "/v4/languages"}
 
 MARKET_ALIASES = {
@@ -87,6 +87,16 @@ def normalize_bookmaker(raw_bookmaker: str) -> str:
     key = (raw_bookmaker or "").lower().strip().replace("_", " ").replace("-", " ").replace(".", " ")
     return BOOKMAKER_ALIASES.get(key, raw_bookmaker or "")
 
+def tournament_name(ev: Dict[str, Any]) -> str:
+    return str(ev.get("tournamentName") or ev.get("league") or ev.get("competition") or ev.get("tournament") or ev.get("categoryName") or "")
+
+def allowed_bookmaker_slugs() -> List[str]:
+    return [BOOKMAKER_SLUGS[b] for b in BOOKMAKERS if b in BOOKMAKER_SLUGS][:ODDSPAPI_MAX_BOOKMAKERS]
+
+def allowed_tournament(ev: Dict[str, Any]) -> bool:
+    name = tournament_name(ev).lower()
+    return not ODDSPAPI_ALLOWED_TOURNAMENTS or any(item in name for item in ODDSPAPI_ALLOWED_TOURNAMENTS)
+
 class OddsPapiService:
     def __init__(self, api_key: str = ODDSPAPI_KEY):
         self.api_key = (api_key or "").strip()
@@ -151,13 +161,13 @@ class OddsPapiService:
         }
         data = self._get("/v4/fixtures", params)
         if isinstance(data, dict):
-            return data.get("data", data.get("fixtures", data.get("events", data)))
-        return data or []
+            data = data.get("data", data.get("fixtures", data.get("events", data)))
+        return [ev for ev in data or [] if isinstance(ev, dict) and allowed_tournament(ev)]
 
     def fetch_fixture_odds(self, fixture_id: str):
         return self._get("/v4/odds", {
             "fixtureId": fixture_id,
-            "bookmakers": ",".join(BOOKMAKER_SLUGS[b] for b in BOOKMAKERS if b in BOOKMAKER_SLUGS),
+            "bookmakers": ",".join(allowed_bookmaker_slugs()),
             "language": ODDSPAPI_LANGUAGE,
             "oddsFormat": "decimal",
             "verbosity": 3,
@@ -175,7 +185,7 @@ class OddsPapiService:
     def fetch_odds_by_tournaments(self, events: List[Dict[str, Any]]):
         tournament_ids = sorted({ev.get("tournamentId") for ev in events if ev.get("hasOdds") is True and ev.get("tournamentId")})
         odds_by_fixture = {}
-        for bookmaker in (BOOKMAKER_SLUGS[b] for b in BOOKMAKERS if b in BOOKMAKER_SLUGS):
+        for bookmaker in allowed_bookmaker_slugs():
             for index in range(0, len(tournament_ids), ODDS_BATCH_SIZE):
                 data = self.fetch_tournament_odds(tournament_ids[index:index + ODDS_BATCH_SIZE], bookmaker)
                 items = data if isinstance(data, list) else data.get("data", data.get("fixtures", [])) if isinstance(data, dict) else []
@@ -208,7 +218,7 @@ class OddsPapiService:
             event_id = str(ev.get("fixtureId") or ev.get("id") or ev.get("event_id") or ev.get("fixture_id") or "")
             home = ev.get("participant1Name") or ev.get("home_team") or ev.get("home") or ev.get("homeTeam") or ev.get("participants", [{}])[0].get("name", "")
             away = ev.get("participant2Name") or ev.get("away_team") or ev.get("away") or ev.get("awayTeam") or (ev.get("participants", [{}, {}])[1].get("name", "") if len(ev.get("participants", [])) > 1 else "")
-            league = normalize_league(ev.get("tournamentName") or ev.get("league") or ev.get("competition") or ev.get("tournament") or ev.get("categoryName") or "")
+            league = normalize_league(tournament_name(ev))
             start_time = ev.get("startTime") or ev.get("start_time") or ev.get("commence_time") or ev.get("date") or ""
             odds_rows = self.parse_odds(odds_by_fixture.get(event_id, ev))
             if event_id and not odds_rows and ev.get("hasOdds") is True and not ev.get("tournamentId"):

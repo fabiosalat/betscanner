@@ -18,11 +18,11 @@ def test_fetch_raw_events_uses_v4_fixtures(monkeypatch):
     def fake_get(path, params):
         captured["path"] = path
         captured["params"] = params
-        return [{"fixtureId": "id1"}]
+        return [{"fixtureId": "id1", "tournamentName": "FIFA World Cup"}]
 
     monkeypatch.setattr(service, "_get", fake_get)
 
-    assert service.fetch_raw_events() == [{"fixtureId": "id1"}]
+    assert service.fetch_raw_events() == [{"fixtureId": "id1", "tournamentName": "FIFA World Cup"}]
     assert captured["path"] == "/v4/fixtures"
     assert captured["params"]["sportId"] == 10
     assert captured["params"]["statusId"] == 0
@@ -31,6 +31,17 @@ def test_fetch_raw_events_uses_v4_fixtures(monkeypatch):
     from_dt = datetime.fromisoformat(captured["params"]["from"].replace("Z", "+00:00"))
     to_dt = datetime.fromisoformat(captured["params"]["to"].replace("Z", "+00:00"))
     assert (to_dt - from_dt).total_seconds() < 48 * 60 * 60
+
+
+def test_fetch_raw_events_keeps_only_allowed_tournaments(monkeypatch):
+    service = OddsPapiService(api_key="x")
+    monkeypatch.setattr(service, "_get", lambda path, params: [
+        {"fixtureId": "world-cup", "tournamentName": "FIFA World Cup"},
+        {"fixtureId": "serie-a", "tournamentName": "Serie A"},
+        {"fixtureId": "wimbledon", "tournamentName": "Wimbledon"},
+    ])
+
+    assert [ev["fixtureId"] for ev in service.fetch_raw_events()] == ["world-cup", "wimbledon"]
 
 
 def test_get_reports_unauthorized_oddspapi_key(monkeypatch):
