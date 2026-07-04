@@ -1,7 +1,7 @@
 from datetime import datetime
 import pytest
 import requests
-from services.oddspapi_service import OddsPapiService, normalize_bookmaker
+from services.oddspapi_service import BOOKMAKER_SLUGS, OddsPapiService, normalize_bookmaker
 
 
 def test_parse_events_ignores_unknown_response_shape(monkeypatch):
@@ -27,7 +27,7 @@ def test_fetch_raw_events_uses_v4_fixtures(monkeypatch):
     assert captured["params"]["sportId"] == 10
     assert captured["params"]["statusId"] == 0
     assert captured["params"]["hasOdds"] == "true"
-    assert captured["params"]["bookmakers"]
+    assert "bookmakers" not in captured["params"]
     from_dt = datetime.fromisoformat(captured["params"]["from"].replace("Z", "+00:00"))
     to_dt = datetime.fromisoformat(captured["params"]["to"].replace("Z", "+00:00"))
     assert (to_dt - from_dt).total_seconds() < 48 * 60 * 60
@@ -69,6 +69,30 @@ def test_get_reports_rate_limit_without_retry(monkeypatch):
     with pytest.raises(RuntimeError, match="rate limit"):
         service._get("/v4/fixtures", {})
     assert len(calls) == 1
+
+
+def test_get_reports_bad_request_without_leaking_api_key(monkeypatch):
+    service = OddsPapiService(api_key="secret-key")
+
+    class Response:
+        status_code = 400
+        text = "bad filter"
+
+        def json(self):
+            return {"message": "bad filter"}
+
+        def raise_for_status(self):
+            raise requests.HTTPError("400")
+
+    monkeypatch.setattr(service.session, "get", lambda *args, **kwargs: Response())
+
+    with pytest.raises(RuntimeError) as exc:
+        service._get("/v4/fixtures", {})
+
+    assert "bad filter" in str(exc.value)
+    assert "/v4/fixtures" in str(exc.value)
+    assert "secret-key" not in str(exc.value)
+    assert "apiKey" not in str(exc.value)
 
 
 def test_get_waits_between_oddspapi_calls(monkeypatch):
@@ -242,3 +266,15 @@ def test_normalize_bookmaker_aliases():
     assert normalize_bookmaker("bet365") == "Bet365 IT"
     assert normalize_bookmaker("planetwin365") == "Planetwin365 IT"
     assert normalize_bookmaker("snai_it") == "Snai IT"
+
+
+def test_italian_bookmaker_slugs_match_oddspapi():
+    assert BOOKMAKER_SLUGS == {
+        "Sisal IT": "sisal.it",
+        "Snai IT": "snai.it",
+        "Eurobet IT": "eurobet.it",
+        "Planetwin365 IT": "planetwin365.it",
+        "Betflag IT": "betflag.it",
+        "Bet365 IT": "bet365",
+        "EPLAY24 IT": "eplay24.it",
+    }

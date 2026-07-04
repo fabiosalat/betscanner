@@ -46,13 +46,13 @@ BOOKMAKER_ALIASES = {
 }
 
 BOOKMAKER_SLUGS = {
-    "Sisal IT": "sisal",
-    "Snai IT": "snai",
-    "Eurobet IT": "eurobet",
-    "Planetwin365 IT": "planetwin365",
-    "Betflag IT": "betflag",
+    "Sisal IT": "sisal.it",
+    "Snai IT": "snai.it",
+    "Eurobet IT": "eurobet.it",
+    "Planetwin365 IT": "planetwin365.it",
+    "Betflag IT": "betflag.it",
     "Bet365 IT": "bet365",
-    "EPLAY24 IT": "eplay24",
+    "EPLAY24 IT": "eplay24.it",
 }
 
 def normalize_market(raw_market: str, line: Any = None, period: str = "") -> str:
@@ -119,6 +119,12 @@ class OddsPapiService:
                     raise RuntimeError("ODDSPAPI_KEY non valida o non autorizzata da OddsPapi")
                 if r.status_code == 429:
                     raise RuntimeError("OddsPapi rate limit: troppe richieste ravvicinate, attendi il cooldown prima di riprovare")
+                if r.status_code == 400:
+                    try:
+                        detail = r.json()
+                    except Exception:
+                        detail = r.text
+                    raise RuntimeError(f"OddsPapi richiesta non valida su {path}: {detail}")
                 r.raise_for_status()
                 data = r.json()
                 if cache_key is not None:
@@ -142,7 +148,6 @@ class OddsPapiService:
             "language": ODDSPAPI_LANGUAGE,
             "statusId": ODDSPAPI_STATUS_ID,
             "hasOdds": "true",
-            "bookmakers": ",".join(BOOKMAKER_SLUGS[b] for b in BOOKMAKERS if b in BOOKMAKER_SLUGS),
         }
         data = self._get("/v4/fixtures", params)
         if isinstance(data, dict):
