@@ -1,3 +1,4 @@
+from werkzeug.datastructures import MultiDict
 from database.db import get_connection
 
 
@@ -19,6 +20,33 @@ def test_refresh_falls_back_when_credentials_are_missing(monkeypatch):
 
     assert response.status_code == 200
     assert response.get_json()["status"] == "missing_credentials"
+
+
+def test_refresh_requires_selected_bookmakers(monkeypatch):
+    import app as app_module
+    monkeypatch.setattr(app_module, "missing_api_credentials", lambda: [])
+
+    response = app_module.app.test_client().post("/refresh?json=1", data={})
+
+    assert response.status_code == 400
+    assert response.get_json()["status"] == "error"
+
+
+def test_refresh_rejects_more_than_five_bookmakers(monkeypatch):
+    import app as app_module
+    monkeypatch.setattr(app_module, "missing_api_credentials", lambda: [])
+
+    response = app_module.app.test_client().post("/refresh?json=1", data=MultiDict([
+        ("bookmakers", "Sisal IT"),
+        ("bookmakers", "Snai IT"),
+        ("bookmakers", "Eurobet IT"),
+        ("bookmakers", "Planetwin365 IT"),
+        ("bookmakers", "Betflag IT"),
+        ("bookmakers", "Bet365 IT"),
+    ]))
+
+    assert response.status_code == 400
+    assert response.get_json()["status"] == "error"
 
 
 def test_export_xlsx_smoke():

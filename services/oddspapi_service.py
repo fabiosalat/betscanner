@@ -3,7 +3,8 @@ import logging
 from time import monotonic, sleep
 import requests
 from typing import Dict, List, Any
-from config import ODDSPAPI_KEY, BOOKMAKERS, LOOKAHEAD_HOURS, REQUEST_TIMEOUT, RETRY_COUNT, ODDSPAPI_SPORT_ID, ODDSPAPI_LANGUAGE, ODDSPAPI_STATUS_ID, ODDSPAPI_REQUEST_COOLDOWN_SECONDS, ODDSPAPI_ALLOWED_TOURNAMENTS, ODDSPAPI_MAX_BOOKMAKERS
+from config import ODDSPAPI_KEY, BOOKMAKERS, LOOKAHEAD_HOURS, REQUEST_TIMEOUT, RETRY_COUNT, ODDSPAPI_SPORT_ID, ODDSPAPI_LANGUAGE, ODDSPAPI_STATUS_ID, ODDSPAPI_REQUEST_COOLDOWN_SECONDS, ODDSPAPI_ALLOWED_TOURNAMENTS, ODDSPAPI_MAX_BOOKMAKERS, SUPPORTED_MARKETS
+from database.repository import Repository
 from matching.normalizer import normalize_team_name, normalize_league
 
 ODDSPAPI_BASE_URL = "https://api.oddspapi.io"
@@ -13,9 +14,11 @@ ODDS_BATCH_SIZE = 5
 STATIC_ENDPOINTS = {"/v4/sports", "/v4/bookmakers", "/v4/markets", "/v4/languages"}
 
 MARKET_ALIASES = {
-    "h2h": "MATCH_ODDS", "match odds": "MATCH_ODDS", "1x2": "MATCH_ODDS",
+    "h2h": "MATCH_ODDS", "match odds": "MATCH_ODDS", "full time result": "MATCH_ODDS", "1x2": "MATCH_ODDS",
     "1st half 1x2": "MATCH_ODDS_HT", "half time result": "MATCH_ODDS_HT", "1x2 1st half": "MATCH_ODDS_HT",
     "double chance": "DOUBLE_CHANCE",
+    "draw no bet": "DRAW_NO_BET",
+    "correct score": "CORRECT_SCORE",
     "both teams to score": "BTTS", "btts": "BTTS", "goal/nogoal": "BTTS",
     "both teams to score 1st half": "BTTS_HT", "btts 1st half": "BTTS_HT",
 }
@@ -23,7 +26,7 @@ MARKET_ALIASES = {
 SELECTION_ALIASES = {
     "home": "HOME", "1": "HOME", "draw": "DRAW", "x": "DRAW", "away": "AWAY", "2": "AWAY",
     "yes": "YES", "goal": "YES", "no": "NO", "nogoal": "NO",
-    "1x": "1X", "x2": "X2", "12": "12",
+    "1x": "1X", "x2": "X2", "2x": "X2", "12": "12",
     "over": "OVER", "under": "UNDER"
 }
 
@@ -55,12 +58,40 @@ BOOKMAKER_SLUGS = {
     "EPLAY24 IT": "eplay24.it",
 }
 
-def normalize_market(raw_market: str, line: Any = None, period: str = "") -> str:
+def normalize_market(raw_market: str, line: Any = None, period: str = "", market_type: str = "") -> str:
     name = (raw_market or "").lower().strip()
     period_l = (period or "").lower()
+    market_type_l = (market_type or "").lower().strip()
+    is_first_half = period_l in {"p1", "1h", "first_half"}
+    is_fulltime = period_l in {"", "fulltime", "ft"}
+    if market_type_l == "1x2":
+        if is_first_half:
+            return "MATCH_ODDS_HT"
+        return "MATCH_ODDS" if is_fulltime else ""
+    if market_type_l == "doublechance":
+        return "DOUBLE_CHANCE" if is_fulltime else ""
+    if market_type_l == "bothteamsscore":
+        if is_first_half:
+            return "BTTS_HT"
+        return "BTTS" if is_fulltime else ""
+    if market_type_l == "drawnobet":
+        return "DRAW_NO_BET" if is_fulltime else ""
+    if market_type_l == "correctscore":
+        if is_first_half:
+            return "CORRECT_SCORE_HT"
+        return "CORRECT_SCORE" if is_fulltime else ""
+    if market_type_l == "totals":
+        if not is_first_half and not is_fulltime:
+            return ""
+        line_s = str(line or "").replace(".", "")
+        return f"OVER_UNDER_HT_{line_s}" if is_first_half else f"OVER_UNDER_{line_s}"
+    if market_type_l:
+        return ""
     if name in MARKET_ALIASES:
         return MARKET_ALIASES[name]
     if "double" in name and "chance" in name: return "DOUBLE_CHANCE"
+    if "draw no bet" in name: return "DRAW_NO_BET" if is_fulltime else ""
+    if "correct score" in name: return "CORRECT_SCORE" if is_fulltime else ""
     if ("both" in name and "score" in name) or "btts" in name:
         return "BTTS_HT" if "half" in name or "1st" in name or "first" in name or period_l in {"1h","first_half"} else "BTTS"
     if "over" in name or "under" in name or "total" in name:
@@ -70,8 +101,7 @@ def normalize_market(raw_market: str, line: Any = None, period: str = "") -> str
                 if x in name: line_s=x; break
         suffix = line_s.replace(".", "") or "25"
         return f"OVER_UNDER_HT_{suffix}" if "half" in name or "1st" in name or period_l in {"1h","first_half"} else f"OVER_UNDER_{suffix}"
-    if "half" in name or "1st" in name or period_l in {"1h","first_half"}: return "MATCH_ODDS_HT"
-    return "MATCH_ODDS"
+    return ""
 
 def normalize_selection(raw_selection: str) -> str:
     s = (raw_selection or "").lower().strip().replace(" ", "")
@@ -91,20 +121,25 @@ def tournament_name(ev: Dict[str, Any]) -> str:
     return str(ev.get("tournamentName") or ev.get("league") or ev.get("competition") or ev.get("tournament") or ev.get("categoryName") or "")
 
 def allowed_bookmaker_slugs() -> List[str]:
-    return [BOOKMAKER_SLUGS[b] for b in BOOKMAKERS if b in BOOKMAKER_SLUGS][:ODDSPAPI_MAX_BOOKMAKERS]
+    slugs = [BOOKMAKER_SLUGS[b] for b in BOOKMAKERS if b in BOOKMAKER_SLUGS]
+    return slugs[:ODDSPAPI_MAX_BOOKMAKERS]
 
 def allowed_tournament(ev: Dict[str, Any]) -> bool:
     name = tournament_name(ev).lower()
     return not ODDSPAPI_ALLOWED_TOURNAMENTS or any(item in name for item in ODDSPAPI_ALLOWED_TOURNAMENTS)
 
 class OddsPapiService:
-    def __init__(self, api_key: str = ODDSPAPI_KEY):
+    def __init__(self, api_key: str = ODDSPAPI_KEY, bookmakers: List[str] = None):
         self.api_key = (api_key or "").strip()
+        self.bookmakers = [b for b in (bookmakers or BOOKMAKERS) if b in BOOKMAKER_SLUGS]
         self.session = requests.Session()
         self.api_calls = 0
         self._markets = None
         self._cache = {}
         self._next_request_at = 0
+
+    def allowed_bookmaker_slugs(self) -> List[str]:
+        return [BOOKMAKER_SLUGS[b] for b in self.bookmakers][:ODDSPAPI_MAX_BOOKMAKERS]
 
     def _get(self, path: str, params: Dict[str, Any]):
         url = f"{ODDSPAPI_BASE_URL}{path}"
@@ -167,7 +202,7 @@ class OddsPapiService:
     def fetch_fixture_odds(self, fixture_id: str):
         return self._get("/v4/odds", {
             "fixtureId": fixture_id,
-            "bookmakers": ",".join(allowed_bookmaker_slugs()),
+            "bookmakers": ",".join(self.allowed_bookmaker_slugs()),
             "language": ODDSPAPI_LANGUAGE,
             "oddsFormat": "decimal",
             "verbosity": 3,
@@ -185,7 +220,7 @@ class OddsPapiService:
     def fetch_odds_by_tournaments(self, events: List[Dict[str, Any]]):
         tournament_ids = sorted({ev.get("tournamentId") for ev in events if ev.get("hasOdds") is True and ev.get("tournamentId")})
         odds_by_fixture = {}
-        for bookmaker in allowed_bookmaker_slugs():
+        for bookmaker in self.allowed_bookmaker_slugs():
             for index in range(0, len(tournament_ids), ODDS_BATCH_SIZE):
                 data = self.fetch_tournament_odds(tournament_ids[index:index + ODDS_BATCH_SIZE], bookmaker)
                 items = data if isinstance(data, list) else data.get("data", data.get("fixtures", [])) if isinstance(data, dict) else []
@@ -197,7 +232,11 @@ class OddsPapiService:
 
     def market_by_id(self, market_id: Any) -> Dict[str, Any]:
         if self._markets is None:
-            data = self._get("/v4/markets", {"language": ODDSPAPI_LANGUAGE}) or []
+            repo = Repository()
+            data = repo.get_oddspapi_markets()
+            if not data:
+                data = self._get("/v4/markets", {"language": ODDSPAPI_LANGUAGE}) or []
+                repo.save_oddspapi_markets(data)
             self._markets = {str(m["marketId"]): m for m in data if isinstance(m, dict) and "marketId" in m}
         return self._markets.get(str(market_id), {})
 
@@ -243,27 +282,39 @@ class OddsPapiService:
                 if not isinstance(book, dict) or book.get("suspended") is True:
                     continue
                 bookmaker = normalize_bookmaker(raw_bookmaker)
-                if bookmaker not in BOOKMAKERS:
+                if bookmaker not in self.bookmakers:
                     continue
                 for market_id, market in (book.get("markets") or {}).items():
                     if not isinstance(market, dict) or market.get("marketActive") is False:
                         continue
                     meta = self.market_by_id(market_id)
                     raw_market = meta.get("marketName") or market.get("bookmakerMarketId") or str(market_id)
-                    normalized_market = normalize_market(raw_market, meta.get("handicap"), meta.get("period", ""))
+                    normalized_market = normalize_market(raw_market, meta.get("handicap"), meta.get("period", ""), meta.get("marketType", ""))
+                    if normalized_market not in SUPPORTED_MARKETS:
+                        continue
                     outcomes_meta = {str(o.get("outcomeId")): o.get("outcomeName") for o in meta.get("outcomes", []) if isinstance(o, dict)}
                     for outcome_id, outcome in (market.get("outcomes") or {}).items():
                         if not isinstance(outcome, dict):
                             continue
-                        selection = normalize_selection(outcomes_meta.get(str(outcome_id)) or "")
+                        outcome_name = outcomes_meta.get(str(outcome_id))
+                        if outcome_name is None:
+                            continue
+                        selection = normalize_selection(outcome_name)
                         for player in (outcome.get("players") or {}).values():
                             if not isinstance(player, dict) or player.get("active") is False:
                                 continue
                             price = player.get("price")
-                            if not selection:
-                                selection = normalize_selection(str(player.get("bookmakerOutcomeId") or ""))
                             try:
-                                rows.append({"bookmaker": bookmaker, "market": normalized_market, "selection": selection, "odd": float(price)})
+                                rows.append({
+                                    "bookmaker": bookmaker,
+                                    "market": normalized_market,
+                                    "selection": selection,
+                                    "odd": float(price),
+                                    "oddspapi_market_id": str(market_id),
+                                    "oddspapi_outcome_id": str(outcome_id),
+                                    "market_name": raw_market,
+                                    "selection_name": outcome_name,
+                                })
                             except Exception:
                                 continue
             return rows
@@ -278,7 +329,7 @@ class OddsPapiService:
                 log.warning("OddsPapi bookmaker ignored because it is %s", type(book).__name__)
                 continue
             bookmaker = normalize_bookmaker(book.get("title") or book.get("name") or book.get("bookmaker") or book.get("key") or "")
-            if bookmaker not in BOOKMAKERS:
+            if bookmaker not in self.bookmakers:
                 continue
             markets = book.get("markets") or book.get("bets") or []
             if isinstance(markets, dict):
@@ -292,7 +343,9 @@ class OddsPapiService:
                     continue
                 raw_market = market.get("key") or market.get("name") or market.get("market") or ""
                 line = market.get("line") or market.get("handicap") or market.get("total")
-                normalized_market = normalize_market(raw_market, line, market.get("period", ""))
+                normalized_market = normalize_market(raw_market, line, market.get("period", ""), market.get("marketType", ""))
+                if normalized_market not in SUPPORTED_MARKETS:
+                    continue
                 outcomes = market.get("outcomes") or market.get("prices") or market.get("runners") or []
                 if isinstance(outcomes, dict):
                     outcomes = [{"name": k, "price": v} for k, v in outcomes.items()]

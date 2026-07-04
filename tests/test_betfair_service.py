@@ -162,6 +162,15 @@ def test_parse_market_catalogues_supports_lightweight_dicts():
     }]
 
 
+def test_runner_to_selection_maps_score_and_double_chance():
+    import services.betfair_service as betfair_service
+
+    assert betfair_service.runner_to_selection("0 - 0") == "0:0"
+    assert betfair_service.runner_to_selection("Team A or Draw", "Team A", "Team B") == "1X"
+    assert betfair_service.runner_to_selection("Draw or Team B", "Team A", "Team B") == "X2"
+    assert betfair_service.runner_to_selection("Team A or Team B", "Team A", "Team B") == "12"
+
+
 def test_get_lay_odds_supports_lightweight_dicts(monkeypatch):
     import services.betfair_service as betfair_service
 

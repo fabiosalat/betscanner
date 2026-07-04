@@ -3,7 +3,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from flask import Flask, render_template, redirect, url_for, request, jsonify, send_file
 from openpyxl import Workbook
-from config import SECRET_KEY, MAX_RESULTS, missing_api_credentials
+from config import SECRET_KEY, MAX_RESULTS, BOOKMAKERS, ODDSPAPI_MAX_BOOKMAKERS, missing_api_credentials
 from database.init_db import init_db
 from database.repository import Repository
 from services.scanner import QuoteScanner
@@ -26,6 +26,9 @@ def index():
         refresh_stats=repo.get_json_cache("last_refresh"),
         counts=repo.counts(),
         bookmakers=repo.top_bookmakers(10),
+        available_bookmakers=BOOKMAKERS,
+        selected_bookmakers=BOOKMAKERS[:ODDSPAPI_MAX_BOOKMAKERS],
+        max_bookmakers=ODDSPAPI_MAX_BOOKMAKERS,
         missing_credentials=missing_api_credentials()
     )
 
@@ -43,10 +46,20 @@ def refresh():
             refresh_stats=repo.get_json_cache("last_refresh"),
             counts=repo.counts(),
             bookmakers=repo.top_bookmakers(10),
+            available_bookmakers=BOOKMAKERS,
+            selected_bookmakers=BOOKMAKERS[:ODDSPAPI_MAX_BOOKMAKERS],
+            max_bookmakers=ODDSPAPI_MAX_BOOKMAKERS,
             missing_credentials=missing,
             refresh_result=result
         ), 200
-    result = QuoteScanner().refresh()
+    selected_bookmakers = request.form.getlist("bookmakers") or request.args.getlist("bookmakers")
+    if not selected_bookmakers and request.is_json:
+        selected_bookmakers = (request.get_json(silent=True) or {}).get("bookmakers") or []
+    selected_bookmakers = [b for b in selected_bookmakers if b in BOOKMAKERS]
+    if not selected_bookmakers or len(selected_bookmakers) > ODDSPAPI_MAX_BOOKMAKERS:
+        result = {"status": "error", "message": f"Seleziona da 1 a {ODDSPAPI_MAX_BOOKMAKERS} bookmaker"}
+        return jsonify(result), 400
+    result = QuoteScanner(bookmakers=selected_bookmakers).refresh()
     if request.headers.get('accept') == 'application/json' or request.args.get('json') == '1':
         return jsonify(result)
     return redirect(url_for('index'))

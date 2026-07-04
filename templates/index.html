@@ -7,8 +7,21 @@
   <div class="col-md-3"><div class="card metric"><div class="card-body"><div class="text-muted">Matched</div><div class="fs-3">{{ counts.matched }}</div></div></div></div>
 </div>
 <form action="/refresh" method="post" class="mb-4" id="refreshForm">
-  <button class="btn btn-primary btn-lg" id="refreshBtn">Refresh Quotes</button>
-  <span class="ms-3 text-muted d-none" id="loading">Aggiornamento quote in corso...</span>
+  <div class="row g-3 align-items-end">
+    <div class="col-md-6 col-lg-4">
+      <label class="form-label" for="bookmakersSelect">Bookmaker OddsPapi</label>
+      <select class="form-select" id="bookmakersSelect" name="bookmakers" multiple size="5" data-max-selected="{{ max_bookmakers }}">
+        {% for bookmaker in available_bookmakers %}
+        <option value="{{ bookmaker }}" {% if bookmaker in selected_bookmakers %}selected{% endif %}>{{ bookmaker }}</option>
+        {% endfor %}
+      </select>
+      <div class="form-text" id="bookmakersHelp">Selezionati {{ selected_bookmakers|length }}/{{ max_bookmakers }}</div>
+    </div>
+    <div class="col-md-auto">
+      <button class="btn btn-primary btn-lg" id="refreshBtn">Refresh Quotes</button>
+      <span class="ms-3 text-muted d-none" id="loading">Aggiornamento quote in corso...</span>
+    </div>
+  </div>
 </form>
 <div class="alert d-none" role="alert" id="refreshAlert"></div>
 {% if missing_credentials %}
@@ -40,7 +53,7 @@
   <div class="card-header d-flex justify-content-between align-items-center"><strong>Top 25 Surebet</strong><a href="/export/surebet" class="btn btn-sm btn-outline-success">Excel</a></div>
   <div class="card-body table-responsive">
     <table class="table table-hover datatable">
-      <thead><tr><th>Evento</th><th>Campionato</th><th>Mercato</th><th>Sel.</th><th>Book</th><th>Back</th><th>Lay</th><th>ROI %</th><th>Stake Lay</th></tr></thead>
+      <thead><tr><th>Evento</th><th>Campionato</th><th>Mercato</th><th>Selezione</th><th>Bookmaker</th><th>Quota punta</th><th>Quota banca</th><th>Rendimento %</th><th>Puntata banca</th></tr></thead>
       <tbody>{% for r in surebets %}<tr><td><a href="/event/{{ r['event_id'] }}">{{ r['event_name'] }}</a></td><td>{{ r['league'] }}</td><td>{{ r['market'] }}</td><td>{{ r['selection'] }}</td><td>{{ r['bookmaker'] }}</td><td>{{ r['back_odd'] }}</td><td>{{ r['lay_odd'] }}</td><td><span class="badge text-bg-success">{{ r['roi'] }}</span></td><td>{{ r['lay_stake'] }}</td></tr>{% endfor %}</tbody>
     </table>
   </div>
@@ -49,7 +62,7 @@
   <div class="card-header d-flex justify-content-between align-items-center"><strong>Top 25 Matched</strong><a href="/export/matched" class="btn btn-sm btn-outline-success">Excel</a></div>
   <div class="card-body table-responsive">
     <table class="table table-hover datatable">
-      <thead><tr><th>Evento</th><th>Campionato</th><th>Mercato</th><th>Sel.</th><th>Book</th><th>Back</th><th>Lay</th><th>QL %</th><th>Stake Lay</th><th>Liability</th></tr></thead>
+      <thead><tr><th>Evento</th><th>Campionato</th><th>Mercato</th><th>Selezione</th><th>Bookmaker</th><th>Quota punta</th><th>Quota banca</th><th>Perdita qualificante %</th><th>Puntata banca</th><th>Responsabilita</th></tr></thead>
       <tbody>{% for r in matched %}<tr><td><a href="/event/{{ r['event_id'] }}">{{ r['event_name'] }}</a></td><td>{{ r['league'] }}</td><td>{{ r['market'] }}</td><td>{{ r['selection'] }}</td><td>{{ r['bookmaker'] }}</td><td>{{ r['back_odd'] }}</td><td>{{ r['lay_odd'] }}</td><td><span class="badge text-bg-info">{{ r['qualifying_loss'] }}</span></td><td>{{ r['lay_stake'] }}</td><td>{{ r['liability'] }}</td></tr>{% endfor %}</tbody>
     </table>
   </div>

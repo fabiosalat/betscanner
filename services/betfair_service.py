@@ -14,11 +14,21 @@ BETFAIR_MARKETS = {
     "MATCH_ODDS_HT": ["HALF_TIME"],
     "BTTS": ["BOTH_TEAMS_TO_SCORE"],
     "DOUBLE_CHANCE": ["DOUBLE_CHANCE"],
+    "DRAW_NO_BET": ["DRAW_NO_BET"],
+    "CORRECT_SCORE": ["CORRECT_SCORE"],
+    "CORRECT_SCORE_HT": ["HALF_TIME_SCORE"],
     "OVER_UNDER_05": ["OVER_UNDER_05"],
     "OVER_UNDER_15": ["OVER_UNDER_15"],
     "OVER_UNDER_25": ["OVER_UNDER_25"],
     "OVER_UNDER_35": ["OVER_UNDER_35"],
     "OVER_UNDER_45": ["OVER_UNDER_45"],
+    "OVER_UNDER_55": ["OVER_UNDER_55"],
+    "OVER_UNDER_65": ["OVER_UNDER_65"],
+    "OVER_UNDER_75": ["OVER_UNDER_75"],
+    "OVER_UNDER_85": ["OVER_UNDER_85"],
+    "OVER_UNDER_HT_05": ["FIRST_HALF_GOALS_05"],
+    "OVER_UNDER_HT_15": ["FIRST_HALF_GOALS_15"],
+    "OVER_UNDER_HT_25": ["FIRST_HALF_GOALS_25"],
 }
 
 def value(source, key, default=None):
@@ -39,8 +49,16 @@ def runner_to_selection(runner_name: str, home: str = "", away: str = ""):
     if low in RUNNER_SELECTION_MAP: return RUNNER_SELECTION_MAP[low]
     if home and low == home.lower().strip(): return "HOME"
     if away and low == away.lower().strip(): return "AWAY"
+    compact_score = low.replace(" ", "")
+    if "-" in compact_score:
+        home_score, away_score = compact_score.split("-", 1)
+        if home_score.isdigit() and away_score.isdigit():
+            return f"{home_score}:{away_score}"
     if "over" in low: return "OVER"
     if "under" in low: return "UNDER"
+    if home and "draw" in low and home.lower().strip() in low: return "1X"
+    if away and "draw" in low and away.lower().strip() in low: return "X2"
+    if home and away and home.lower().strip() in low and away.lower().strip() in low: return "12"
     if low in {"1x", "x2", "12"}: return low.upper()
     return runner_name.upper().strip()
 

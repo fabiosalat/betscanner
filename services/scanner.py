@@ -12,9 +12,9 @@ from config import BETFAIR_ONLY_MODE, ODDSPAPI_RATE_LIMIT_COOLDOWN_SECONDS
 log = logging.getLogger(__name__)
 
 class QuoteScanner:
-    def __init__(self):
+    def __init__(self, bookmakers=None):
         self.repo = Repository()
-        self.odds = OddsPapiService()
+        self.odds = OddsPapiService(bookmakers=bookmakers)
         self.betfair = BetfairService()
         self.matcher = EventMatcher()
         self.surebet = SurebetEngine()
@@ -90,7 +90,11 @@ class QuoteScanner:
                 ))
                 ev["db_event_id"] = event_id
                 odds_event_payloads.append(ev)
-                book_rows = [BookmakerOdd(event_id, o["bookmaker"], o["market"], o["selection"], o["odd"]) for o in ev.get("odds", [])]
+                book_rows = [BookmakerOdd(
+                    event_id, o["bookmaker"], o["market"], o["selection"], o["odd"],
+                    o.get("oddspapi_market_id", ""), o.get("oddspapi_outcome_id", ""),
+                    o.get("market_name", ""), o.get("selection_name", "")
+                ) for o in ev.get("odds", [])]
                 bookmaker_odds_count += len(book_rows)
                 self.repo.insert_odds_bulk(book_rows)
 

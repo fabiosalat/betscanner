@@ -23,12 +23,35 @@ class Repository:
         rows = list(odds)
         with get_connection() as conn:
             conn.executemany("""
-                INSERT INTO odds (event_id, bookmaker, market, selection, odd)
-                VALUES (?, ?, ?, ?, ?)
+                INSERT INTO odds (event_id, bookmaker, market, selection, odd, oddspapi_market_id, oddspapi_outcome_id, market_name, selection_name)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(event_id, bookmaker, market, selection) DO UPDATE SET
-                    odd=excluded.odd, updated_at=CURRENT_TIMESTAMP
-            """, [(o.event_id,o.bookmaker,o.market,o.selection,o.odd) for o in rows])
+                    odd=excluded.odd, oddspapi_market_id=excluded.oddspapi_market_id,
+                    oddspapi_outcome_id=excluded.oddspapi_outcome_id, market_name=excluded.market_name,
+                    selection_name=excluded.selection_name, updated_at=CURRENT_TIMESTAMP
+            """, [(o.event_id,o.bookmaker,o.market,o.selection,o.odd,o.oddspapi_market_id,o.oddspapi_outcome_id,o.market_name,o.selection_name) for o in rows])
             conn.commit()
+
+    def save_oddspapi_markets(self, markets):
+        with get_connection() as conn:
+            conn.executemany("""
+                INSERT INTO oddspapi_markets (market_id, market_name, market_type, period, handicap, raw_json)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(market_id) DO UPDATE SET
+                    market_name=excluded.market_name, market_type=excluded.market_type, period=excluded.period,
+                    handicap=excluded.handicap, raw_json=excluded.raw_json, updated_at=CURRENT_TIMESTAMP
+            """, [(str(m.get("marketId")), m.get("marketName"), m.get("marketType"), m.get("period"), m.get("handicap"), json.dumps(m, ensure_ascii=False)) for m in markets if isinstance(m, dict) and m.get("marketId") is not None])
+            conn.executemany("""
+                INSERT INTO oddspapi_outcomes (market_id, outcome_id, outcome_name)
+                VALUES (?, ?, ?)
+                ON CONFLICT(market_id, outcome_id) DO UPDATE SET outcome_name=excluded.outcome_name, updated_at=CURRENT_TIMESTAMP
+            """, [(str(m.get("marketId")), str(o.get("outcomeId")), o.get("outcomeName")) for m in markets if isinstance(m, dict) and m.get("marketId") is not None for o in m.get("outcomes", []) if isinstance(o, dict) and o.get("outcomeId") is not None])
+            conn.commit()
+
+    def get_oddspapi_markets(self):
+        with get_connection() as conn:
+            rows = conn.execute("SELECT raw_json FROM oddspapi_markets").fetchall()
+            return [json.loads(row["raw_json"]) for row in rows]
 
     def insert_betfair_odds_bulk(self, odds: Iterable[BetfairOdd]) -> None:
         rows = list(odds)
