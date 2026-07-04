@@ -84,7 +84,7 @@ def normalize_selection(raw_selection: str) -> str:
     return raw_selection.upper().strip()
 
 def normalize_bookmaker(raw_bookmaker: str) -> str:
-    key = (raw_bookmaker or "").lower().strip().replace("_", " ").replace("-", " ")
+    key = (raw_bookmaker or "").lower().strip().replace("_", " ").replace("-", " ").replace(".", " ")
     return BOOKMAKER_ALIASES.get(key, raw_bookmaker or "")
 
 class OddsPapiService:
@@ -163,10 +163,10 @@ class OddsPapiService:
             "verbosity": 3,
         }) or {}
 
-    def fetch_tournament_odds(self, tournament_ids: List[Any]):
+    def fetch_tournament_odds(self, tournament_ids: List[Any], bookmaker: str):
         return self._get("/v4/odds-by-tournaments", {
             "tournamentIds": ",".join(str(t) for t in tournament_ids),
-            "bookmakers": ",".join(BOOKMAKER_SLUGS[b] for b in BOOKMAKERS if b in BOOKMAKER_SLUGS),
+            "bookmaker": bookmaker,
             "language": ODDSPAPI_LANGUAGE,
             "oddsFormat": "decimal",
             "verbosity": 3,
@@ -175,12 +175,14 @@ class OddsPapiService:
     def fetch_odds_by_tournaments(self, events: List[Dict[str, Any]]):
         tournament_ids = sorted({ev.get("tournamentId") for ev in events if ev.get("hasOdds") is True and ev.get("tournamentId")})
         odds_by_fixture = {}
-        for index in range(0, len(tournament_ids), ODDS_BATCH_SIZE):
-            data = self.fetch_tournament_odds(tournament_ids[index:index + ODDS_BATCH_SIZE])
-            items = data if isinstance(data, list) else data.get("data", data.get("fixtures", [])) if isinstance(data, dict) else []
-            for item in items:
-                if isinstance(item, dict) and item.get("fixtureId"):
-                    odds_by_fixture[str(item["fixtureId"])] = item
+        for bookmaker in (BOOKMAKER_SLUGS[b] for b in BOOKMAKERS if b in BOOKMAKER_SLUGS):
+            for index in range(0, len(tournament_ids), ODDS_BATCH_SIZE):
+                data = self.fetch_tournament_odds(tournament_ids[index:index + ODDS_BATCH_SIZE], bookmaker)
+                items = data if isinstance(data, list) else data.get("data", data.get("fixtures", [])) if isinstance(data, dict) else []
+                for item in items:
+                    if isinstance(item, dict) and item.get("fixtureId"):
+                        current = odds_by_fixture.setdefault(str(item["fixtureId"]), {**item, "bookmakerOdds": {}})
+                        current["bookmakerOdds"].update(item.get("bookmakerOdds") or {})
         return odds_by_fixture
 
     def market_by_id(self, market_id: Any) -> Dict[str, Any]:

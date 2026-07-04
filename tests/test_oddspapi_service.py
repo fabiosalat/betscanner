@@ -149,10 +149,15 @@ def test_fetch_odds_by_tournaments_batches_unique_tournaments(monkeypatch):
     service = OddsPapiService(api_key="x")
     batches = []
     monkeypatch.setattr("services.oddspapi_service.ODDS_BATCH_SIZE", 2)
+    monkeypatch.setattr("services.oddspapi_service.BOOKMAKERS", ["Sisal IT", "Bet365 IT"])
 
-    def fake_fetch_tournament_odds(tournament_ids):
-        batches.append(tournament_ids)
-        return [{"fixtureId": f"id{tournament_id}", "tournamentId": tournament_id} for tournament_id in tournament_ids]
+    def fake_fetch_tournament_odds(tournament_ids, bookmaker):
+        batches.append((tournament_ids, bookmaker))
+        return [{
+            "fixtureId": f"id{tournament_id}",
+            "tournamentId": tournament_id,
+            "bookmakerOdds": {bookmaker: {"markets": {}}},
+        } for tournament_id in tournament_ids]
 
     monkeypatch.setattr(service, "fetch_tournament_odds", fake_fetch_tournament_odds)
 
@@ -164,9 +169,10 @@ def test_fetch_odds_by_tournaments_batches_unique_tournaments(monkeypatch):
         {"fixtureId": "e", "tournamentId": 4, "hasOdds": True},
     ])
 
-    assert batches == [[1, 2], [4]]
+    assert batches == [([1, 2], "sisal.it"), ([4], "sisal.it"), ([1, 2], "bet365"), ([4], "bet365")]
     assert rows["id1"]["tournamentId"] == 1
     assert rows["id4"]["tournamentId"] == 4
+    assert rows["id1"]["bookmakerOdds"] == {"sisal.it": {"markets": {}}, "bet365": {"markets": {}}}
 
 
 def test_parse_events_fetches_v4_odds_for_fixtures_with_odds(monkeypatch):
@@ -266,6 +272,7 @@ def test_normalize_bookmaker_aliases():
     assert normalize_bookmaker("bet365") == "Bet365 IT"
     assert normalize_bookmaker("planetwin365") == "Planetwin365 IT"
     assert normalize_bookmaker("snai_it") == "Snai IT"
+    assert normalize_bookmaker("sisal.it") == "Sisal IT"
 
 
 def test_italian_bookmaker_slugs_match_oddspapi():
