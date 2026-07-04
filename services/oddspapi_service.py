@@ -1,16 +1,16 @@
 from datetime import datetime, timedelta, timezone
 import logging
-from time import sleep
+from time import monotonic, sleep
 import requests
 from typing import Dict, List, Any
-from config import ODDSPAPI_KEY, BOOKMAKERS, LOOKAHEAD_HOURS, REQUEST_TIMEOUT, RETRY_COUNT, ODDSPAPI_SPORT_ID, ODDSPAPI_LANGUAGE, ODDSPAPI_STATUS_ID
+from config import ODDSPAPI_KEY, BOOKMAKERS, LOOKAHEAD_HOURS, REQUEST_TIMEOUT, RETRY_COUNT, ODDSPAPI_SPORT_ID, ODDSPAPI_LANGUAGE, ODDSPAPI_STATUS_ID, ODDSPAPI_REQUEST_COOLDOWN_SECONDS
 from matching.normalizer import normalize_team_name, normalize_league
 
 ODDSPAPI_BASE_URL = "https://api.oddspapi.io"
 log = logging.getLogger(__name__)
 MAX_FIXTURES_LOOKAHEAD_HOURS = 47
 ODDS_BATCH_SIZE = 20
-ODDS_BATCH_COOLDOWN_SECONDS = 1.1
+STATIC_ENDPOINTS = {"/v4/sports", "/v4/bookmakers", "/v4/markets", "/v4/languages"}
 
 MARKET_ALIASES = {
     "h2h": "MATCH_ODDS", "match odds": "MATCH_ODDS", "1x2": "MATCH_ODDS",
@@ -93,15 +93,26 @@ class OddsPapiService:
         self.session = requests.Session()
         self.api_calls = 0
         self._markets = None
+        self._cache = {}
+        self._next_request_at = 0
 
     def _get(self, path: str, params: Dict[str, Any]):
         url = f"{ODDSPAPI_BASE_URL}{path}"
         last_exc = None
+        cache_key = None
         params = {**params, "apiKey": self.api_key}
+        if path in STATIC_ENDPOINTS:
+            cache_key = (path, tuple(sorted((key, str(value)) for key, value in params.items() if key != "apiKey")))
+            if cache_key in self._cache:
+                return self._cache[cache_key]
         for _ in range(RETRY_COUNT):
             try:
+                wait = self._next_request_at - monotonic()
+                if wait > 0:
+                    sleep(wait)
                 self.api_calls += 1
                 r = self.session.get(url, params=params, timeout=REQUEST_TIMEOUT)
+                self._next_request_at = monotonic() + ODDSPAPI_REQUEST_COOLDOWN_SECONDS
                 if r.status_code == 404:
                     return None
                 if r.status_code == 401:
@@ -109,7 +120,10 @@ class OddsPapiService:
                 if r.status_code == 429:
                     raise RuntimeError("OddsPapi rate limit: troppe richieste ravvicinate, attendi il cooldown prima di riprovare")
                 r.raise_for_status()
-                return r.json()
+                data = r.json()
+                if cache_key is not None:
+                    self._cache[cache_key] = data
+                return data
             except Exception as exc:
                 if str(exc).startswith(("ODDSPAPI_KEY", "OddsPapi rate limit")):
                     raise
@@ -157,8 +171,6 @@ class OddsPapiService:
         tournament_ids = sorted({ev.get("tournamentId") for ev in events if ev.get("hasOdds") is True and ev.get("tournamentId")})
         odds_by_fixture = {}
         for index in range(0, len(tournament_ids), ODDS_BATCH_SIZE):
-            if index:
-                sleep(ODDS_BATCH_COOLDOWN_SECONDS)
             data = self.fetch_tournament_odds(tournament_ids[index:index + ODDS_BATCH_SIZE])
             items = data if isinstance(data, list) else data.get("data", data.get("fixtures", [])) if isinstance(data, dict) else []
             for item in items:

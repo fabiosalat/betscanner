@@ -71,11 +71,60 @@ def test_get_reports_rate_limit_without_retry(monkeypatch):
     assert len(calls) == 1
 
 
+def test_get_waits_between_oddspapi_calls(monkeypatch):
+    service = OddsPapiService(api_key="x")
+    sleeps = []
+    now = [100.0]
+
+    class Response:
+        status_code = 200
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return []
+
+    def fake_sleep(seconds):
+        sleeps.append(seconds)
+        now[0] += seconds
+
+    monkeypatch.setattr("services.oddspapi_service.ODDSPAPI_REQUEST_COOLDOWN_SECONDS", 2.1)
+    monkeypatch.setattr("services.oddspapi_service.monotonic", lambda: now[0])
+    monkeypatch.setattr("services.oddspapi_service.sleep", fake_sleep)
+    monkeypatch.setattr(service.session, "get", lambda *args, **kwargs: Response())
+
+    service._get("/v4/fixtures", {})
+    now[0] += 1.0
+    service._get("/v4/fixtures", {})
+
+    assert sleeps == [pytest.approx(1.1)]
+
+
+def test_static_oddspapi_endpoints_are_cached(monkeypatch):
+    service = OddsPapiService(api_key="x")
+    calls = []
+
+    class Response:
+        status_code = 200
+
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            return [{"marketId": 101, "marketName": "Full Time Result"}]
+
+    monkeypatch.setattr(service.session, "get", lambda *args, **kwargs: calls.append(kwargs) or Response())
+
+    assert service._get("/v4/markets", {"language": "en"}) == [{"marketId": 101, "marketName": "Full Time Result"}]
+    assert service._get("/v4/markets", {"language": "en"}) == [{"marketId": 101, "marketName": "Full Time Result"}]
+    assert len(calls) == 1
+
+
 def test_fetch_odds_by_tournaments_batches_unique_tournaments(monkeypatch):
     service = OddsPapiService(api_key="x")
     batches = []
     monkeypatch.setattr("services.oddspapi_service.ODDS_BATCH_SIZE", 2)
-    monkeypatch.setattr("services.oddspapi_service.sleep", lambda seconds: None)
 
     def fake_fetch_tournament_odds(tournament_ids):
         batches.append(tournament_ids)

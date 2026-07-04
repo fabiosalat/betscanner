@@ -22,8 +22,10 @@ class RateLimitedOdds:
 
 def test_refresh_skips_betfair_when_oddspapi_has_no_events():
     from database.init_db import init_db
+    from database.repository import Repository
 
     init_db()
+    Repository().set_cache("oddspapi_rate_limited_until", 0)
     scanner = QuoteScanner()
     scanner.odds = EmptyOdds()
     scanner.betfair = FailingBetfair()
@@ -37,8 +39,10 @@ def test_refresh_skips_betfair_when_oddspapi_has_no_events():
 
 def test_refresh_caches_oddspapi_rate_limit():
     from database.init_db import init_db
+    from database.repository import Repository
 
     init_db()
+    Repository().set_cache("oddspapi_rate_limited_until", 0)
     scanner = QuoteScanner()
     scanner.odds = RateLimitedOdds()
     scanner.betfair = FailingBetfair()
