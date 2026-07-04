@@ -102,6 +102,8 @@ class BetfairService:
             timeout=REQUEST_TIMEOUT,
         )
         if response.status_code != 200:
+            if "Cloudflare" in response.text or "Attention Required" in response.text:
+                raise RuntimeError(f"Betfair {operation} HTTP {response.status_code}: richiesta bloccata da Cloudflare su {BETFAIR_BETTING_API_URL}")
             raise RuntimeError(f"Betfair {operation} HTTP {response.status_code} su {BETFAIR_BETTING_API_URL}: {response.text[:500]}")
         data = response.json()
         if "error" in data:

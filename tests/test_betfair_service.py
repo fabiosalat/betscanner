@@ -116,6 +116,23 @@ def test_call_betting_api_reports_http_body(monkeypatch):
         service.call_betting_api("listEventTypes", {"filter": {}})
 
 
+def test_call_betting_api_reports_cloudflare_block(monkeypatch):
+    import pytest
+    import services.betfair_service as betfair_service
+
+    service = betfair_service.BetfairService()
+    service.trading = type("Trading", (), {"session_token": "session"})()
+
+    class Response:
+        status_code = 403
+        text = "<title>Attention Required! | Cloudflare</title>"
+
+    monkeypatch.setattr(betfair_service.requests, "post", lambda *args, **kwargs: Response())
+
+    with pytest.raises(RuntimeError, match="Cloudflare"):
+        service.call_betting_api("listEventTypes", {"filter": {}})
+
+
 def test_parse_market_catalogues_supports_lightweight_dicts():
     import services.betfair_service as betfair_service
 

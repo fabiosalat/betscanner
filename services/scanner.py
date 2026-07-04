@@ -159,7 +159,7 @@ class QuoteScanner:
         except Exception as exc:
             duration = time.time() - started
             if not api_calls:
-                api_calls += getattr(self.odds, "api_calls", 0)
+                api_calls += getattr(self.odds, "api_calls", 0) + getattr(self.betfair, "api_calls", 0)
             log.exception("Refresh failed")
             if str(exc).startswith("OddsPapi rate limit"):
                 self.repo.set_cache("oddspapi_rate_limited_until", time.time() + ODDSPAPI_RATE_LIMIT_COOLDOWN_SECONDS)
