@@ -9,8 +9,21 @@
 <form action="/refresh" method="post" class="mb-4" id="refreshForm">
   <div class="row g-3 align-items-end">
     <div class="col-md-6 col-lg-4">
-      <label class="form-label" for="bookmakersSelect">Bookmaker OddsPapi</label>
-      <select class="form-select" id="bookmakersSelect" name="bookmakers" multiple size="5" data-max-selected="{{ max_bookmakers }}">
+      <label class="form-label" for="bookmakersTrigger">Bookmaker OddsPapi</label>
+      <div class="bookmaker-picker" data-max-selected="{{ max_bookmakers }}">
+        <button class="form-select bookmaker-picker-toggle" id="bookmakersTrigger" type="button" aria-haspopup="listbox" aria-expanded="false">
+          <span id="bookmakersSummary"></span>
+        </button>
+        <div class="bookmaker-picker-panel" role="listbox" aria-multiselectable="true">
+          {% for bookmaker in available_bookmakers %}
+          <label class="bookmaker-option">
+            <input class="form-check-input" type="checkbox" name="bookmakers" value="{{ bookmaker }}" {% if bookmaker in selected_bookmakers %}checked{% endif %}>
+            <span>{{ bookmaker }}</span>
+          </label>
+          {% endfor %}
+        </div>
+      </div>
+      <select class="d-none" id="bookmakersSelect" multiple data-max-selected="{{ max_bookmakers }}" aria-hidden="true">
         {% for bookmaker in available_bookmakers %}
         <option value="{{ bookmaker }}" {% if bookmaker in selected_bookmakers %}selected{% endif %}>{{ bookmaker }}</option>
         {% endfor %}
@@ -53,8 +66,8 @@
   <div class="card-header d-flex justify-content-between align-items-center"><strong>Top 25 Surebet</strong><a href="/export/surebet" class="btn btn-sm btn-outline-success">Excel</a></div>
   <div class="card-body table-responsive">
     <table class="table table-hover datatable">
-      <thead><tr><th>Evento</th><th>Campionato</th><th>Mercato</th><th>Selezione</th><th>Bookmaker</th><th>Quota punta</th><th>Quota banca</th><th>Rendimento %</th><th>Puntata banca</th></tr></thead>
-      <tbody>{% for r in surebets %}<tr><td><a href="/event/{{ r['event_id'] }}">{{ r['event_name'] }}</a></td><td>{{ r['league'] }}</td><td>{{ r['market'] }}</td><td>{{ r['selection'] }}</td><td>{{ r['bookmaker'] }}</td><td>{{ r['back_odd'] }}</td><td>{{ r['lay_odd'] }}</td><td><span class="badge text-bg-success">{{ r['roi'] }}</span></td><td>{{ r['lay_stake'] }}</td></tr>{% endfor %}</tbody>
+      <thead><tr><th>Evento</th><th>Campionato</th><th>Mercato</th><th>Selezione</th><th>Bookmaker</th><th>Quota punta</th><th>Quota banca</th><th>Rendimento %</th></tr></thead>
+      <tbody>{% for r in surebets %}<tr class="opportunity-row" data-type="{{ r['type'] }}" data-event="{{ r['event_name'] }}" data-league="{{ r['league'] }}" data-market="{{ r['market'] }}" data-selection="{{ r['selection'] }}" data-bookmaker="{{ r['bookmaker'] }}" data-back-odd="{{ r['back_odd'] }}" data-lay-odd="{{ r['lay_odd'] }}" data-stake="{{ default_stake }}" data-commission="{{ betfair_commission }}"><td><a href="/event/{{ r['event_id'] }}">{{ r['event_name'] }}</a></td><td>{{ r['league'] }}</td><td>{{ r['market'] }}</td><td>{{ r['selection'] }}</td><td>{{ r['bookmaker'] }}</td><td>{{ r['back_odd'] }}</td><td>{{ r['lay_odd'] }}</td><td><span class="badge text-bg-success">{{ r['roi'] }}</span></td></tr>{% endfor %}</tbody>
     </table>
   </div>
 </div>
@@ -62,9 +75,42 @@
   <div class="card-header d-flex justify-content-between align-items-center"><strong>Top 25 Matched</strong><a href="/export/matched" class="btn btn-sm btn-outline-success">Excel</a></div>
   <div class="card-body table-responsive">
     <table class="table table-hover datatable">
-      <thead><tr><th>Evento</th><th>Campionato</th><th>Mercato</th><th>Selezione</th><th>Bookmaker</th><th>Quota punta</th><th>Quota banca</th><th>Perdita qualificante %</th><th>Puntata banca</th><th>Responsabilita</th></tr></thead>
-      <tbody>{% for r in matched %}<tr><td><a href="/event/{{ r['event_id'] }}">{{ r['event_name'] }}</a></td><td>{{ r['league'] }}</td><td>{{ r['market'] }}</td><td>{{ r['selection'] }}</td><td>{{ r['bookmaker'] }}</td><td>{{ r['back_odd'] }}</td><td>{{ r['lay_odd'] }}</td><td><span class="badge text-bg-info">{{ r['qualifying_loss'] }}</span></td><td>{{ r['lay_stake'] }}</td><td>{{ r['liability'] }}</td></tr>{% endfor %}</tbody>
+      <thead><tr><th>Evento</th><th>Campionato</th><th>Mercato</th><th>Selezione</th><th>Bookmaker</th><th>Quota punta</th><th>Quota banca</th><th>Perdita qualificante %</th></tr></thead>
+      <tbody>{% for r in matched %}<tr class="opportunity-row" data-type="{{ r['type'] }}" data-event="{{ r['event_name'] }}" data-league="{{ r['league'] }}" data-market="{{ r['market'] }}" data-selection="{{ r['selection'] }}" data-bookmaker="{{ r['bookmaker'] }}" data-back-odd="{{ r['back_odd'] }}" data-lay-odd="{{ r['lay_odd'] }}" data-stake="{{ default_stake }}" data-commission="{{ betfair_commission }}"><td><a href="/event/{{ r['event_id'] }}">{{ r['event_name'] }}</a></td><td>{{ r['league'] }}</td><td>{{ r['market'] }}</td><td>{{ r['selection'] }}</td><td>{{ r['bookmaker'] }}</td><td>{{ r['back_odd'] }}</td><td>{{ r['lay_odd'] }}</td><td><span class="badge text-bg-info">{{ r['qualifying_loss'] }}</span></td></tr>{% endfor %}</tbody>
     </table>
   </div>
 </div>
+<dialog class="bet-dialog" id="calculatorDialog">
+  <form method="dialog" class="bet-dialog-box">
+    <div class="d-flex justify-content-between align-items-start gap-3 mb-3">
+      <div>
+        <div class="text-muted small" id="calcMeta"></div>
+        <h2 class="h5 mb-1" id="calcEvent"></h2>
+        <div class="text-muted" id="calcMarket"></div>
+      </div>
+      <button class="btn-close" value="close" aria-label="Chiudi"></button>
+    </div>
+    <div class="row g-3">
+      <div class="col-sm-4">
+        <label class="form-label" for="calcStake">Puntata</label>
+        <input class="form-control" id="calcStake" type="number" min="0" step="0.01">
+      </div>
+      <div class="col-sm-4">
+        <label class="form-label" for="calcBackOdd">Quota punta</label>
+        <input class="form-control" id="calcBackOdd" type="number" min="1.01" step="0.01">
+      </div>
+      <div class="col-sm-4">
+        <label class="form-label" for="calcLayOdd">Quota banca</label>
+        <input class="form-control" id="calcLayOdd" type="number" min="1.01" step="0.01">
+      </div>
+    </div>
+    <div class="calculator-results mt-4">
+      <div><span>Puntata banca</span><strong id="calcLayStake"></strong></div>
+      <div><span>Responsabilita</span><strong id="calcLiability"></strong></div>
+      <div><span>Se vince la punta</span><strong id="calcBackWin"></strong></div>
+      <div><span>Se vince la banca</span><strong id="calcLayWin"></strong></div>
+      <div><span>Esito netto</span><strong id="calcNet"></strong></div>
+    </div>
+  </form>
+</dialog>
 {% endblock %}

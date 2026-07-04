@@ -3,7 +3,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from flask import Flask, render_template, redirect, url_for, request, jsonify, send_file
 from openpyxl import Workbook
-from config import SECRET_KEY, MAX_RESULTS, BOOKMAKERS, ODDSPAPI_MAX_BOOKMAKERS, missing_api_credentials
+from config import SECRET_KEY, MAX_RESULTS, BOOKMAKERS, ODDSPAPI_MAX_BOOKMAKERS, BETFAIR_COMMISSION, DEFAULT_STAKE, missing_api_credentials
 from database.init_db import init_db
 from database.repository import Repository
 from services.scanner import QuoteScanner
@@ -29,6 +29,8 @@ def index():
         available_bookmakers=BOOKMAKERS,
         selected_bookmakers=BOOKMAKERS[:ODDSPAPI_MAX_BOOKMAKERS],
         max_bookmakers=ODDSPAPI_MAX_BOOKMAKERS,
+        betfair_commission=BETFAIR_COMMISSION,
+        default_stake=DEFAULT_STAKE,
         missing_credentials=missing_api_credentials()
     )
 
@@ -49,6 +51,8 @@ def refresh():
             available_bookmakers=BOOKMAKERS,
             selected_bookmakers=BOOKMAKERS[:ODDSPAPI_MAX_BOOKMAKERS],
             max_bookmakers=ODDSPAPI_MAX_BOOKMAKERS,
+            betfair_commission=BETFAIR_COMMISSION,
+            default_stake=DEFAULT_STAKE,
             missing_credentials=missing,
             refresh_result=result
         ), 200
