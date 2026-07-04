@@ -2,9 +2,11 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 import os
 import betfairlightweight
+import requests
 from config import (
     BETFAIR_USERNAME, BETFAIR_PASSWORD, BETFAIR_APP_KEY, BETFAIR_SSOID, BETFAIR_CERT, BETFAIR_KEY,
-    BETFAIR_CERT_FILE, BETFAIR_KEY_FILE, BETFAIR_EVENT_TYPE_SOCCER, BETFAIR_LOCALE, LOOKAHEAD_HOURS
+    BETFAIR_CERT_FILE, BETFAIR_KEY_FILE, BETFAIR_EVENT_TYPE_SOCCER, BETFAIR_LOCALE, BETFAIR_BETTING_API_URL,
+    LOOKAHEAD_HOURS, REQUEST_TIMEOUT
 )
 
 BETFAIR_MARKETS = {
@@ -87,8 +89,26 @@ class BetfairService:
     def keep_alive(self):
         self.ensure_login().keep_alive()
 
-    def list_market_catalogue(self):
+    def call_betting_api(self, operation: str, params: dict):
         trading = self.ensure_login()
+        response = requests.post(
+            BETFAIR_BETTING_API_URL,
+            json={"jsonrpc": "2.0", "method": f"SportsAPING/v1.0/{operation}", "params": params, "id": 1},
+            headers={
+                "X-Application": BETFAIR_APP_KEY,
+                "X-Authentication": trading.session_token or "",
+                "Content-Type": "application/json",
+            },
+            timeout=REQUEST_TIMEOUT,
+        )
+        if response.status_code != 200:
+            raise RuntimeError(f"Betfair {operation} HTTP {response.status_code} su {BETFAIR_BETTING_API_URL}: {response.text[:500]}")
+        data = response.json()
+        if "error" in data:
+            raise RuntimeError(f"Betfair {operation} error: {data['error']}")
+        return data.get("result") or []
+
+    def list_market_catalogue(self):
         start = datetime.now(timezone.utc)
         end = start + timedelta(hours=LOOKAHEAD_HOURS)
         market_types = sorted({x for values in BETFAIR_MARKETS.values() for x in values})
@@ -100,13 +120,12 @@ class BetfairService:
                 market_type_codes=[market_type_code],
             )
             self.api_calls += 1
-            catalogues = trading.betting.list_market_catalogue(
-                filter=market_filter,
-                market_projection=["EVENT", "MARKET_START_TIME", "RUNNER_DESCRIPTION", "MARKET_DESCRIPTION"],
-                sort="FIRST_TO_START",
-                max_results=200,
-                lightweight=True,
-            )
+            catalogues = self.call_betting_api("listMarketCatalogue", {
+                "filter": market_filter,
+                "marketProjection": ["EVENT", "MARKET_START_TIME", "RUNNER_DESCRIPTION", "MARKET_DESCRIPTION"],
+                "sort": "FIRST_TO_START",
+                "maxResults": "200",
+            })
             out.extend(self.parse_market_catalogues(catalogues))
         return out
 
@@ -134,12 +153,13 @@ class BetfairService:
         return out
 
     def list_market_books(self, market_ids):
-        trading = self.ensure_login()
         if not market_ids:
             return []
         self.api_calls += 1
-        price_projection = betfairlightweight.filters.price_projection(price_data=["EX_BEST_OFFERS"])
-        return trading.betting.list_market_book(market_ids=market_ids, price_projection=price_projection, lightweight=True)
+        return self.call_betting_api("listMarketBook", {
+            "marketIds": market_ids,
+            "priceProjection": {"priceData": ["EX_BEST_OFFERS"]},
+        })
 
     def get_lay_odds_for_catalogues(self, catalogues):
         market_ids = [c["market_id"] for c in catalogues]

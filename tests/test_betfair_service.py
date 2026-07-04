@@ -70,6 +70,52 @@ def test_betfair_certificate_login_uses_italy_locale_and_cert_files(monkeypatch,
     assert created["login"] is True
 
 
+def test_call_betting_api_uses_json_rpc_headers(monkeypatch):
+    import services.betfair_service as betfair_service
+
+    service = betfair_service.BetfairService()
+    service.trading = type("Trading", (), {"session_token": "session"})()
+    captured = {}
+
+    class Response:
+        status_code = 200
+        text = ""
+
+        def json(self):
+            return {"result": [{"eventType": {"id": "1"}}]}
+
+    def fake_post(url, json, headers, timeout):
+        captured.update(url=url, json=json, headers=headers, timeout=timeout)
+        return Response()
+
+    monkeypatch.setattr(betfair_service, "BETFAIR_APP_KEY", "app")
+    monkeypatch.setattr(betfair_service, "BETFAIR_BETTING_API_URL", "https://api.betfair.com/exchange/betting/json-rpc/v1")
+    monkeypatch.setattr(betfair_service.requests, "post", fake_post)
+
+    assert service.call_betting_api("listEventTypes", {"filter": {}}) == [{"eventType": {"id": "1"}}]
+    assert captured["url"] == "https://api.betfair.com/exchange/betting/json-rpc/v1"
+    assert captured["headers"]["X-Application"] == "app"
+    assert captured["headers"]["X-Authentication"] == "session"
+    assert captured["json"]["method"] == "SportsAPING/v1.0/listEventTypes"
+
+
+def test_call_betting_api_reports_http_body(monkeypatch):
+    import pytest
+    import services.betfair_service as betfair_service
+
+    service = betfair_service.BetfairService()
+    service.trading = type("Trading", (), {"session_token": "session"})()
+
+    class Response:
+        status_code = 403
+        text = "forbidden body"
+
+    monkeypatch.setattr(betfair_service.requests, "post", lambda *args, **kwargs: Response())
+
+    with pytest.raises(RuntimeError, match="forbidden body"):
+        service.call_betting_api("listEventTypes", {"filter": {}})
+
+
 def test_parse_market_catalogues_supports_lightweight_dicts():
     import services.betfair_service as betfair_service
 

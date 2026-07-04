@@ -12,6 +12,7 @@ ODDSPAPI_STATUS_ID = int(env("ODDSPAPI_STATUS_ID", "0"))
 BETFAIR_EVENT_TYPE_SOCCER = "1"
 BETFAIR_LOCALE = env("BETFAIR_LOCALE", "italy")
 BETFAIR_ONLY_MODE = env("BETFAIR_ONLY_MODE", "true").lower() in {"1", "true", "yes", "on"}
+BETFAIR_BETTING_API_URL = env("BETFAIR_BETTING_API_URL", "https://api.betfair.com/exchange/betting/json-rpc/v1")
 LOOKAHEAD_HOURS = int(env("LOOKAHEAD_HOURS", "72"))
 BETFAIR_COMMISSION = float(env("BETFAIR_COMMISSION", "0.02"))
 DEFAULT_STAKE = float(env("DEFAULT_STAKE", "100"))
